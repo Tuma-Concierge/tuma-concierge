@@ -4,7 +4,7 @@
   "compatibility_date": "2026-09-12",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "observability": { "enabled": true, "traces": { "enabled": true } },
+  "observability": { "enabled": true, "redact_query_string": true, "traces": { "enabled": true } },
   "routes": [{ "pattern": "api.tumaffe.online", "custom_domain": true }],
   "d1_databases": [
     {

@@ -143,7 +143,10 @@ export default function SettingsPage() {
               return <label key={method} className="flex min-h-12 items-center justify-between gap-3">
                 <span>{method === "cash" ? "Cash" : "Mobile money"}{lastActive && <span className="ml-2 text-xs text-ink-500">At least one must stay active</span>}</span>
                 <input type="checkbox" checked={checked} disabled={!canManagePayments || lastActive || busy}
-                  onChange={(event) => setPaymentMethods((current) => event.target.checked ? [...current, method] : current.filter((m) => m !== method))} />
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setPaymentMethods((current) => enabled ? [...new Set([...current, method])] : current.length > 1 ? current.filter((m) => m !== method) : current);
+                  }} />
               </label>;
             })}
             {paymentMethods.includes("mobile_money") && <label className="block space-y-1 text-sm">

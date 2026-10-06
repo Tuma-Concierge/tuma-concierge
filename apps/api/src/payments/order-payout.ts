@@ -18,7 +18,7 @@ export async function startOrderPayout(orderId:string, send:typeof initiateDisbu
   if (previous && previous.status !== "failed") return submitReserved(previous,send);
   if (order.stage === "Settle" && !previous) throw new Error("Historical wallet-settled orders cannot be paid out again.");
   const collections=(await db.execute({sql:"SELECT * FROM payments WHERE order_id = ? AND type = 'collection' AND status = 'successful'",args:[orderId]})).rows as Row[];
-  const refunds=(await db.execute({sql:"SELECT COALESCE(SUM(amount),0) AS amount FROM payments WHERE order_id = ? AND type = 'refund' AND status = 'successful'",args:[orderId]})).rows[0];
+  const refunds=(await db.execute({sql:"SELECT COALESCE(SUM(amount),0) AS amount FROM payments WHERE order_id = ? AND type IN ('refund','disbursement') AND status = 'successful'",args:[orderId]})).rows[0];
   const collected=collections.reduce((sum,row)=>sum+Number(row.amount),0)-Number(refunds?.amount ?? 0);
   if (collected <= 0) throw new Error("No collected funds are available for this payout.");
   const fees=(await db.execute({sql:"SELECT * FROM order_fees WHERE order_id = ?",args:[orderId]})).rows[0] as Row | undefined;
