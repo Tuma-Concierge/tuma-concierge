@@ -46,7 +46,7 @@ jobs:
           done
       - name: API tests
         working-directory: apps/api
-        run: npm test
+        run: pnpm lint && pnpm test
 
   # Every Next.js app must still build.
   build:
@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [admin, customer, merchant, partner, restaurant, rider, web]
+        app: [admin, customer, rider]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

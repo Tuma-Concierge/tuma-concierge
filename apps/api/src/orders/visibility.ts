@@ -23,7 +23,7 @@ export type OrderViewer = { sub: string; role: "customer" | "rider" | "admin" };
 export function redactOrder(order: Row | undefined, viewer: OrderViewer): Row | undefined {
   if (!order) return order;
   if (viewer.role === "admin" || order.customer_id === viewer.sub) return order;
-  const { pin_code: _pin, share_token: _share, ...rest } = order;
+  const { pin_code: _pin, ...rest } = order;
   return rest;
 }
 
@@ -45,13 +45,7 @@ function coarse(value: unknown): number | null {
  */
 export function toOpenJob(
   order: Row,
-  extras: {
-    distanceKm: number | null;
-    outOfServiceRange: boolean;
-    applied: boolean;
-    /** Set when riders may bid on this job: the app price and the allowed range. */
-    bidding?: { appPrice: number | null; min: number | null; max: number | null } | null;
-  },
+  extras: { distanceKm: number | null; outOfServiceRange: boolean; applied: boolean },
 ): Row {
   const fullName = (order.customer_name as string | null)?.trim();
   return {
@@ -77,15 +71,6 @@ export function toOpenJob(
     // First name only — enough to label the card ("Sharon's List"), not
     // enough to identify someone from a feed anyone can sign up to watch.
     customer_name: fullName ? fullName.split(/\s+/)[0] : null,
-    // A food order is `type: 'shopping'` with restaurant_id set (see
-    // 0034_order_restaurant.sql) — surfaced here so the rider app can
-    // categorize it as "Food" rather than plain "Shopping".
-    restaurant_id: order.restaurant_id ?? null,
-    restaurant_name: order.restaurant_name ?? null,
-    // A passenger ride is `type: 'parcel'` with this flag set (see
-    // 0039_ride_orders.sql) — surfaced here so the rider app can
-    // categorize it as "Ride" rather than plain "Parcel".
-    is_ride: order.is_ride ?? 0,
     ...extras,
   };
 }

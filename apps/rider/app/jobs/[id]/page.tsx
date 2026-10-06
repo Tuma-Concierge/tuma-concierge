@@ -1,27 +1,22 @@
 "use client";
 
-import { isPracticeMode, isProSubscriptionCurrent, type MerchantPayment, type OrderDetail } from "@tuma/shared";
-import { Crown, MapPin, MessageCircle, Pencil, X } from "lucide-react";
+import type { OrderDetail } from "@tuma/shared";
+import { MapPin, MessageCircle, Pencil, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CustomerAvatar } from "../../../components/CustomerAvatar";
 import { DeliveryNavigation } from "../../../components/DeliveryNavigation";
 import { FeeProposalVoicePlayer } from "../../../components/FeeProposalVoicePlayer";
-import { LugandaListPlayer } from "../../../components/LugandaListPlayer";
 import { VoiceNotePlayer } from "../../../components/VoiceNotePlayer";
 import { VoiceReasonRecorder } from "../../../components/VoiceReasonRecorder";
 import { api, errorMessage } from "../../../lib/api";
-import { useAuth } from "../../../lib/auth-context";
-import { useTranslate } from "../../../lib/i18n";
 import { formatUgx, jobTitle, stageLabel } from "../../../lib/order-display";
 import { useLivePolling } from "../../../lib/use-live-polling";
 
 type PendingEdit = { originalName: string; substituteName: string; priceDelta: number };
 
 export default function JobDetailPage() {
-  const t = useTranslate();
-  const { rider } = useAuth();
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const router = useRouter();
@@ -39,30 +34,6 @@ export default function JobDetailPage() {
   const [feeVoiceNote, setFeeVoiceNote] = useState<Blob | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
-  const [showMerchantPayment, setShowMerchantPayment] = useState(false);
-  const [outletCode, setOutletCode] = useState("");
-  const [merchantAmount, setMerchantAmount] = useState("");
-  const [receiptReference, setReceiptReference] = useState("");
-  const [merchantPayment, setMerchantPayment] = useState<MerchantPayment | null>(null);
-  const [lugandaAudioEnabled, setLugandaAudioEnabled] = useState(false);
-  const [lugandaAudioRequiresPro, setLugandaAudioRequiresPro] = useState(false);
-
-  useEffect(() => {
-    api
-      .getSettings()
-      .then(({ settings }) => {
-        setLugandaAudioEnabled(settings.lugandaAudioEnabled);
-        setLugandaAudioRequiresPro(settings.lugandaAudioRequiresPro);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!isPracticeMode()) return;
-    setOutletCode("TUMA-DEMO");
-    setMerchantAmount("28000");
-    setReceiptReference("PRACTICE-001");
-  }, []);
 
   const load = useCallback(async () => {
     const res = await api.getOrder(orderId);
@@ -94,7 +65,7 @@ export default function JobDetailPage() {
   }
 
   if (!detail) {
-    return <div className="p-4 text-sm text-ink-500">{t("job_loading")}</div>;
+    return <div className="p-4 text-sm text-ink-500">Loading job…</div>;
   }
 
   const { order, items, substitutions, feeProposals } = detail;
@@ -196,61 +167,6 @@ export default function JobDetailPage() {
     }
   }
 
-  async function requestMerchantPayment() {
-    const amount = Number(merchantAmount);
-    if (!Number.isInteger(amount) || amount <= 0) {
-      setError("Enter the exact whole-UGX amount on the merchant's receipt.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      let location: GeolocationPosition | null = null;
-      if (typeof navigator !== "undefined" && navigator.geolocation) {
-        location = await new Promise<GeolocationPosition | null>((resolve) => {
-          navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
-            enableHighAccuracy: true,
-            timeout: 12_000,
-            maximumAge: 15_000,
-          });
-        });
-      }
-      if (!location && !receiptReference.trim()) {
-        throw new Error("Location was unavailable. Add the receipt number so the merchant can complete the fallback check.");
-      }
-      const result = await api.createMerchantPayment({
-        orderId,
-        outletCode: outletCode.trim(),
-        amount,
-        riderLat: location?.coords.latitude,
-        riderLng: location?.coords.longitude,
-        accuracyM: location?.coords.accuracy,
-        capturedAt: location ? new Date(location.timestamp).toISOString() : undefined,
-        evidenceMode: location ? "gps" : "merchant_reauth_receipt",
-        receiptReference: receiptReference.trim() || undefined,
-      }, `merchant-purchase:${orderId}:${crypto.randomUUID()}`);
-      setMerchantPayment(result.payment);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refreshMerchantPayment() {
-    if (!merchantPayment) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api.merchantPayment(merchantPayment.id);
-      setMerchantPayment(result.payment);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="space-y-6 px-4 pb-24 pt-4">
       <header className="space-y-1">
@@ -258,29 +174,18 @@ export default function JobDetailPage() {
           {order.customer_id && <CustomerAvatar customerId={order.customer_id} />}
           <h1 className="text-xl font-bold text-ink">{jobTitle(order)}</h1>
         </div>
-        <p className="text-sm font-semibold text-green">{stageLabel(order.stage, order.type, !!order.is_ride)}</p>
-        {!!order.is_ride && order.passenger_name && (
-          <p className="text-sm text-ink">
-            Passenger: <span className="font-bold">{order.passenger_name}</span>
-            {order.passenger_phone && (
-              <>
-                {" · "}
-                <a href={`tel:${order.passenger_phone}`} className="font-bold text-gold underline">{order.passenger_phone}</a>
-              </>
-            )}
-          </p>
-        )}
+        <p className="text-sm font-semibold text-green">{stageLabel(order.stage, order.type)}</p>
         {order.type === "parcel" && order.pickup_area && (
           <p className="flex items-center gap-1.5 text-sm text-ink-500">
             <MapPin className="h-3.5 w-3.5 text-ink-500" strokeWidth={2} aria-hidden />
-            {t("job_pickup", { area: order.pickup_area })}
+            Pickup: {order.pickup_area}
             {order.pickup_address ? ` · ${order.pickup_address}` : ""}
           </p>
         )}
         {order.destination_area && (
           <p className="flex items-center gap-1.5 text-sm text-ink-500">
             <MapPin className="h-3.5 w-3.5 text-ink-500" strokeWidth={2} aria-hidden />
-            {order.type === "parcel" ? t("job_deliver_to") : ""}
+            {order.type === "parcel" ? "Deliver to: " : ""}
             {order.destination_area}
             {order.destination_address ? ` · ${order.destination_address}` : ""}
           </p>
@@ -289,25 +194,11 @@ export default function JobDetailPage() {
 
       {order.voice_note_key && <VoiceNotePlayer orderId={orderId} />}
 
-      {lugandaAudioEnabled && items.length > 0 && (
-        lugandaAudioRequiresPro && !isProSubscriptionCurrent(rider) ? (
-          <Link
-            href="/account#rider-pro"
-            className="flex items-center gap-2 rounded-full border border-gold bg-gold/10 px-4 py-2 text-sm font-bold text-ink"
-          >
-            <Crown className="h-4 w-4 text-gold" strokeWidth={2} aria-hidden />
-            Upgrade to Pro to listen in Luganda
-          </Link>
-        ) : (
-          <LugandaListPlayer orderId={orderId} />
-        )
-      )}
-
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {order.type === "shopping" ? (
         <section className="home-card space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">{t("job_shopping_list")}</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">Shopping list</h2>
           <ul className="space-y-1.5">
             {items.map((item) => {
               const edit = pendingEdits[item.id];
@@ -319,7 +210,7 @@ export default function JobDetailPage() {
                       <span className={`block ${edit ? "text-ink-500 line-through" : ""}`}>
                         {item.quantity}× {item.name}
                         {item.unit_price != null && (
-                          <span className="text-ink-500"> · {t("job_est_each", { amount: formatUgx(item.unit_price) })}</span>
+                          <span className="text-ink-500"> · Est. {formatUgx(item.unit_price)} each</span>
                         )}
                       </span>
                       {item.note && <span className="block text-xs text-ink-500">{item.note}</span>}
@@ -333,7 +224,7 @@ export default function JobDetailPage() {
                             onClick={() => removeEdit(item.id)}
                             className="text-ink-500 underline"
                           >
-                            {t("job_undo")}
+                            Undo
                           </button>
                         </span>
                       )}
@@ -365,20 +256,20 @@ export default function JobDetailPage() {
                         onClick={() => markUnavailable(item)}
                         className="w-full rounded-lg bg-[rgb(var(--surface-card))] py-1.5 text-xs font-bold text-ink"
                       >
-                        {t("job_not_available_remove")}
+                        Not available — remove from list
                       </button>
                       <div className="grid grid-cols-2 gap-1.5">
                         <input
                           value={draftSubstitute}
                           onChange={(e) => setDraftSubstitute(e.target.value)}
-                          placeholder={t("job_replace_with")}
+                          placeholder="Replace with…"
                           className="w-full rounded-lg border border-[var(--border-faint)] px-2 py-1.5 text-xs outline-none focus:border-gold"
                         />
                         <input
                           value={draftPriceDelta}
                           onChange={(e) => setDraftPriceDelta(e.target.value.replace(/[^-\d]/g, ""))}
                           inputMode="numeric"
-                          placeholder={t("job_price_change")}
+                          placeholder="Price change"
                           className="w-full rounded-lg border border-[var(--border-faint)] px-2 py-1.5 text-xs outline-none focus:border-gold"
                         />
                       </div>
@@ -388,7 +279,7 @@ export default function JobDetailPage() {
                         onClick={() => saveDraft(item)}
                         className="w-full rounded-lg bg-gold py-1.5 text-xs font-bold text-ink-gold disabled:opacity-50"
                       >
-                        {t("job_save_change")}
+                        Save change
                       </button>
                     </div>
                   )}
@@ -398,23 +289,20 @@ export default function JobDetailPage() {
           </ul>
           <div className="space-y-1 border-t border-[var(--border-faint)] pt-2 text-sm font-semibold">
             <div className="flex justify-between">
-              <span>{t("job_items_total")}</span>
+              <span>Items total</span>
               <span>{formatUgx((order.final_total ?? order.estimated_total ?? 0) - (order.delivery_fee ?? 0))}</span>
             </div>
             <div className="flex justify-between text-ink-500">
-              <span>{t("job_delivery_fee")}</span>
+              <span>Delivery fee</span>
               <span>{formatUgx(order.delivery_fee ?? 0)}</span>
             </div>
           </div>
           {pendingCount > 0 && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-gold bg-gold/10 p-3">
               <p className="text-xs font-semibold text-ink">
-                {t("job_changes_count", {
-                  count: pendingCount,
-                  plural: pendingCount > 1 ? "s" : "",
-                  sign: pendingNetDelta >= 0 ? "+" : "",
-                  amount: formatUgx(pendingNetDelta),
-                })}
+                {pendingCount} change{pendingCount > 1 ? "s" : ""} ·{" "}
+                {pendingNetDelta >= 0 ? "+" : ""}
+                {formatUgx(pendingNetDelta)}
               </p>
               <button
                 type="button"
@@ -422,26 +310,26 @@ export default function JobDetailPage() {
                 onClick={sendBatch}
                 className="shrink-0 rounded-full bg-gold px-4 py-2 text-xs font-bold text-ink-gold disabled:opacity-60"
               >
-                {t("job_send_for_approval")}
+                Send for approval
               </button>
             </div>
           )}
         </section>
       ) : (
         <section className="home-card flex justify-between text-sm font-semibold">
-          <span>{t("job_delivery_fee")}</span>
+          <span>Delivery fee</span>
           <span>{formatUgx(order.delivery_fee ?? order.final_total ?? order.estimated_total)}</span>
         </section>
       )}
 
       {canProposeFee && (
         <section className="home-card space-y-2">
-          <h2 className="text-sm font-semibold text-ink">{t("job_delivery_fee")}</h2>
+          <h2 className="text-sm font-semibold text-ink">Delivery fee</h2>
           {latestFeeProposal && (
             <div className="rounded-xl bg-[rgb(var(--surface-muted))] p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-ink">
-                  {t("job_you_suggested_fee", { amount: formatUgx(latestFeeProposal.proposed_total - currentItemsTotal) })}
+                  You suggested a delivery fee of {formatUgx(latestFeeProposal.proposed_total - currentItemsTotal)}
                   {latestFeeProposal.reason ? ` — ${latestFeeProposal.reason}` : ""}
                 </span>
                 <span
@@ -453,7 +341,7 @@ export default function JobDetailPage() {
                         : "bg-white text-ink-500"
                   }`}
                 >
-                  {latestFeeProposal.status === "pending" ? t("job_waiting") : latestFeeProposal.status}
+                  {latestFeeProposal.status === "pending" ? "Waiting" : latestFeeProposal.status}
                 </span>
               </div>
               {latestFeeProposal.reason_voice_key && (
@@ -471,14 +359,14 @@ export default function JobDetailPage() {
                 }}
                 className="text-sm font-bold text-gold"
               >
-                {t("job_suggest_different_fee")}
+                Suggest a different delivery fee
               </button>
             )
           ) : (
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-ink-500" htmlFor="new-delivery-fee">
-                  {t("job_new_delivery_fee_label")}
+                  New delivery fee (UGX) — items cost isn&apos;t affected
                 </label>
                 <input
                   id="new-delivery-fee"
@@ -488,24 +376,24 @@ export default function JobDetailPage() {
                   placeholder="e.g. 8000"
                   className="w-full rounded-lg border-2 border-gold/40 px-2.5 py-2.5 text-base font-bold text-ink outline-none focus:border-gold"
                 />
-                <p className="text-xs text-ink-500">{t("job_currently", { amount: formatUgx(order.delivery_fee ?? 0) })}</p>
+                <p className="text-xs text-ink-500">Currently {formatUgx(order.delivery_fee ?? 0)}.</p>
               </div>
 
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-ink-500" htmlFor="fee-reason">
-                  {t("job_reason_optional")}
+                  Reason (optional, typed)
                 </label>
                 <input
                   id="fee-reason"
                   value={feeReason}
                   onChange={(e) => setFeeReason(e.target.value)}
-                  placeholder={t("job_type_reason_placeholder")}
+                  placeholder="Type a reason in English…"
                   className="w-full rounded-lg border border-[var(--border-faint)] px-2.5 py-2 text-sm outline-none focus:border-gold"
                 />
               </div>
 
               <div className="space-y-1 rounded-lg border border-dashed border-[var(--border-faint)] p-2.5">
-                <p className="text-xs font-semibold text-ink-500">{t("job_or_record_voice_reason")}</p>
+                <p className="text-xs font-semibold text-ink-500">Or record a voice reason (any language)</p>
                 <VoiceReasonRecorder blob={feeVoiceNote} onChange={setFeeVoiceNote} />
               </div>
 
@@ -518,7 +406,7 @@ export default function JobDetailPage() {
                   }}
                   className="flex-1 rounded-lg border border-[var(--border-faint)] py-1.5 text-xs font-bold text-ink"
                 >
-                  {t("job_cancel")}
+                  Cancel
                 </button>
                 <button
                   type="button"
@@ -526,7 +414,7 @@ export default function JobDetailPage() {
                   onClick={sendFeeProposal}
                   className="flex-[2] rounded-lg bg-gold py-1.5 text-xs font-bold text-ink-gold disabled:opacity-50"
                 >
-                  {t("job_send_to_customer")}
+                  Send to customer
                 </button>
               </div>
             </div>
@@ -536,11 +424,13 @@ export default function JobDetailPage() {
 
       <section className="home-card space-y-3">
         {["Create", "Match", "Fund"].includes(order.stage) && (
-          <p className="text-sm text-ink-500">{t("job_waiting_on_customer_fund")}</p>
+          <p className="text-sm text-ink-500">Waiting on the customer to fund this order.</p>
         )}
 
         {canPropose && pendingCount === 0 && (
-          <p className="text-sm text-ink-500">{t("job_tap_pencil_hint")}</p>
+          <p className="text-sm text-ink-500">
+            Tap the pencil next to an item above if something&apos;s unavailable or costs more.
+          </p>
         )}
 
         {substitutions.length > 0 && (
@@ -566,47 +456,6 @@ export default function JobDetailPage() {
           </ul>
         )}
 
-        {order.type === "shopping" && order.funds_model === "merchant_allocations_v1" && canDeliver && (
-          <div className="space-y-3 border-t border-[var(--border-faint)] pt-3">
-            <div>
-              <p className="text-sm font-semibold text-ink">Pay a Tuma merchant</p>
-              <p className="text-xs text-ink-500">The merchant must check and confirm the exact amount before you leave with the goods.</p>
-            </div>
-            {!showMerchantPayment && !merchantPayment && (
-              <button type="button" onClick={() => setShowMerchantPayment(true)} className="min-h-11 w-full rounded-full border border-gold px-4 text-sm font-bold text-gold">
-                Record merchant purchase
-              </button>
-            )}
-            {showMerchantPayment && !merchantPayment && (
-              <div className="space-y-2 rounded-xl border border-[var(--border-faint)] p-3">
-                <input value={outletCode} onChange={(e) => setOutletCode(e.target.value)} placeholder="Merchant outlet code" autoCapitalize="characters" className="min-h-11 w-full rounded-xl border border-[var(--border-faint)] bg-transparent px-3 text-sm" />
-                <input value={merchantAmount} onChange={(e) => setMerchantAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="Exact receipt amount (UGX)" inputMode="numeric" className="min-h-11 w-full rounded-xl border border-[var(--border-faint)] bg-transparent px-3 text-sm" />
-                <input value={receiptReference} onChange={(e) => setReceiptReference(e.target.value)} placeholder="Receipt number (recommended)" className="min-h-11 w-full rounded-xl border border-[var(--border-faint)] bg-transparent px-3 text-sm" />
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowMerchantPayment(false)} className="min-h-11 flex-1 rounded-full border border-[var(--border-faint)] px-3 text-sm font-bold text-ink">Cancel</button>
-                  <button type="button" disabled={busy || !outletCode.trim() || !merchantAmount} onClick={requestMerchantPayment} className="min-h-11 flex-[2] rounded-full bg-gold px-3 text-sm font-bold text-ink-gold disabled:opacity-60">{busy ? "Checking location…" : "Request confirmation"}</button>
-                </div>
-              </div>
-            )}
-            {merchantPayment && (
-              <div className="rounded-xl border border-gold/40 bg-gold/5 p-3">
-                <p className="text-xs text-ink-500">Show this payment code to the merchant</p>
-                <p className="mt-1 break-all font-mono text-sm font-bold text-ink">{merchantPayment.id}</p>
-                <p className="mt-1 text-sm font-semibold text-ink">{formatUgx(merchantPayment.amount)}</p>
-                <p className="mt-1 text-xs text-ink-500">Status: {merchantPayment.status.replaceAll("_", " ")}</p>
-                <div className="mt-3 flex gap-2">
-                  {merchantPayment.status === "awaiting_confirmation" && (
-                    <button type="button" disabled={busy} onClick={refreshMerchantPayment} className="min-h-10 flex-1 rounded-full border border-gold px-3 text-xs font-bold text-gold">{busy ? "Checking…" : "Check confirmation"}</button>
-                  )}
-                  {merchantPayment.status !== "awaiting_confirmation" && (
-                    <button type="button" onClick={() => { setMerchantPayment(null); setShowMerchantPayment(true); setOutletCode(""); setMerchantAmount(""); setReceiptReference(""); }} className="min-h-10 flex-1 rounded-full border border-gold px-3 text-xs font-bold text-gold">Add another merchant</button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {canDeliver && (
           <form
             onSubmit={(e) => {
@@ -619,7 +468,7 @@ export default function JobDetailPage() {
               value={etaMinutes}
               onChange={(e) => setEtaMinutes(e.target.value.replace(/[^\d]/g, ""))}
               inputMode="numeric"
-              placeholder={t("job_eta_placeholder")}
+              placeholder="ETA (min)"
               className="w-24 rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-sm outline-none focus:border-gold"
             />
             <button
@@ -627,7 +476,7 @@ export default function JobDetailPage() {
               disabled={busy}
               className="min-h-11 flex-1 rounded-full bg-gold px-4 text-sm font-bold text-ink-gold disabled:opacity-60"
             >
-              {t("job_start_delivery")}
+              Start delivery
             </button>
           </form>
         )}
@@ -635,76 +484,39 @@ export default function JobDetailPage() {
         {order.stage === "Deliver" && (
           <>
             <p className="text-sm text-ink-500">
-              {order.is_ride
-                ? t("job_heading_pickup_passenger", { eta: order.eta_minutes ? ` — ~${order.eta_minutes} min` : "" })
-                : t("job_on_the_way", { eta: order.eta_minutes ? ` — ~${order.eta_minutes} min` : "" })}
+              On the way{order.eta_minutes ? ` — ~${order.eta_minutes} min` : ""}. Navigate to the customer, then
+              confirm once you&apos;ve arrived.
             </p>
-            <DeliveryNavigation
-              orderId={orderId}
-              destinationLat={order.is_ride ? order.pickup_lat : order.destination_lat}
-              destinationLng={order.is_ride ? order.pickup_lng : order.destination_lng}
-              busy={busy}
-              onConfirmDelivery={() =>
-                run(async () => {
-                  await api.arrivedOrder(orderId);
-                  if (!order.is_ride) router.push("/active");
-                })
-              }
-              confirmButtonLabel={order.is_ride ? t("job_confirm_pickup") : t("job_confirm_delivery")}
-              confirmModalDescription={
-                order.is_ride
-                  ? t("job_confirm_pickup_desc")
-                  : t("job_confirm_delivery_desc")
-              }
-            />
-          </>
-        )}
-
-        {order.stage === "Arrived" && order.is_ride && (
-          <>
-            <p className="text-sm text-ink-500">{t("job_passenger_notified")}</p>
-            <button
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await api.pickedUpOrder(orderId);
-                })
-              }
-              className="min-h-11 w-full rounded-full bg-gold px-4 text-sm font-bold text-ink-gold disabled:opacity-60"
-            >
-              {t("job_confirm_passenger_picked_up")}
-            </button>
-          </>
-        )}
-
-        {order.stage === "Arrived" && !order.is_ride && (
-          <p className="text-sm text-ink-500">{t("job_customer_notified_handover")}</p>
-        )}
-
-        {order.stage === "PickedUp" && (
-          <>
-            <p className="text-sm text-ink-500">{t("job_heading_destination")}</p>
             <DeliveryNavigation
               orderId={orderId}
               destinationLat={order.destination_lat}
               destinationLng={order.destination_lng}
               busy={busy}
-              onConfirmDelivery={() => router.push("/active")}
-              confirmButtonLabel={t("job_trip_complete")}
-              confirmModalDescription={t("job_trip_complete_desc")}
+              onConfirmDelivery={() =>
+                run(async () => {
+                  await api.arrivedOrder(orderId);
+                  router.push("/active");
+                })
+              }
             />
           </>
         )}
 
+        {order.stage === "Arrived" && (
+          <p className="text-sm text-ink-500">
+            The customer&apos;s been notified you&apos;re here. Ask them to confirm handover in their app.
+          </p>
+        )}
+
         {order.stage === "Handover" && (
           <>
-            <p className="text-sm text-ink-500">{t("job_handover_confirmed")}</p>
+            <p className="text-sm text-ink-500">Handover confirmed. Collect your payout.</p>
             <button
               disabled={busy}
               onClick={() => run(() => api.settleOrder(orderId))}
               className="min-h-11 w-full rounded-full bg-gold px-4 text-sm font-bold text-ink-gold disabled:opacity-60"
             >
-              {t("job_settle_get_paid")}
+              Settle & get paid
             </button>
           </>
         )}
@@ -712,30 +524,29 @@ export default function JobDetailPage() {
         {order.stage === "Settle" && (
           <div className="space-y-3 text-center">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{t("job_you_earned")}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">You earned</p>
               <p className="text-3xl font-extrabold text-green">
                 {formatUgx(order.delivery_fee ?? order.final_total ?? order.estimated_total)}
               </p>
               {order.type === "shopping" && order.payment_rail === "escrow" && order.delivery_fee != null && (
                 <p className="mt-1 text-xs text-ink-500">
-                  {t("job_plus_reimbursed", {
-                    reimbursed: formatUgx((order.final_total ?? order.estimated_total ?? 0) - order.delivery_fee),
-                    total: formatUgx(order.final_total ?? order.estimated_total ?? 0),
-                  })}
+                  Plus{" "}
+                  {formatUgx((order.final_total ?? order.estimated_total ?? 0) - order.delivery_fee)} reimbursed
+                  for items — {formatUgx(order.final_total ?? order.estimated_total)} total settled to your
+                  wallet.
                 </p>
               )}
             </div>
             {walletBalance != null && (
               <p className="text-sm text-ink-500">
-                {t("job_wallet_balance_label")}
-                <span className="text-base font-bold text-ink">{formatUgx(walletBalance)}</span>
+                Wallet balance: <span className="text-base font-bold text-ink">{formatUgx(walletBalance)}</span>
               </p>
             )}
             <Link
               href="/"
               className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-gold px-6 text-sm font-bold text-ink-gold"
             >
-              {t("job_back_to_jobs")}
+              Back to Jobs
             </Link>
           </div>
         )}
@@ -749,18 +560,20 @@ export default function JobDetailPage() {
               onClick={() => setConfirmCancel(true)}
               className="w-full text-center text-sm font-bold text-red-600"
             >
-              {t("job_cancel_this_job")}
+              Cancel this job
             </button>
           ) : (
             <div className="space-y-2 text-center">
-              <p className="text-sm text-ink-500">{t("job_cancel_note")}</p>
+              <p className="text-sm text-ink-500">
+                This job goes back to the pool for another rider. You won&apos;t be offered it again.
+              </p>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setConfirmCancel(false)}
                   className="flex-1 rounded-full border border-[var(--border-faint)] py-2 text-sm font-bold text-ink"
                 >
-                  {t("job_keep_job")}
+                  Keep job
                 </button>
                 <button
                   type="button"
@@ -768,7 +581,7 @@ export default function JobDetailPage() {
                   onClick={cancelJob}
                   className="flex-1 rounded-full bg-red-600 py-2 text-sm font-bold text-white disabled:opacity-60"
                 >
-                  {t("job_yes_cancel")}
+                  Yes, cancel
                 </button>
               </div>
             </div>
@@ -782,7 +595,7 @@ export default function JobDetailPage() {
           className="home-card flex items-center gap-2 !rounded-2xl !py-3 text-sm font-bold text-ink"
         >
           <MessageCircle className="h-4 w-4 text-gold" strokeWidth={2} aria-hidden />
-          {t("job_open_fullscreen_chat")}
+          Open full-screen chat
         </Link>
       )}
     </div>

@@ -46,11 +46,10 @@ async function recordLedgerEntry(input: {
   counterpartyId?: string;
   note?: string;
   actorId?: string;
-  walletId?: string;
 }): Promise<void> {
   await db.execute({
-    sql: `INSERT INTO wallet_ledger (id, user_id, type, amount, balance_after, order_id, topup_id, counterparty_id, note, actor_id, environment, wallet_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO wallet_ledger (id, user_id, type, amount, balance_after, order_id, topup_id, counterparty_id, note, actor_id, environment)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       newId("wl"),
       input.userId,
@@ -63,16 +62,12 @@ async function recordLedgerEntry(input: {
       input.note ?? null,
       input.actorId ?? null,
       input.environment,
-      input.walletId ?? null,
     ],
   });
 }
 
 /** Always succeeds (crediting has no failure mode besides a DB error) —
- * returns the balance afterward. Omit `walletId` for the customer's
- * original/primary wallet (users.wallet_balance); pass one of their
- * secondary wallets' ids (see ../db/migrations/0045_multi_wallet.sql) to
- * credit that one instead. */
+ * returns the balance afterward. */
 export async function creditWallet(
   userId: string,
   amount: number,
@@ -84,27 +79,15 @@ export async function creditWallet(
     counterpartyId?: string;
     note?: string;
     actorId?: string;
-    walletId?: string;
   },
 ): Promise<number> {
   const column = balanceColumn(info.environment);
-  let balance: number;
-  if (info.walletId) {
-    const walletColumn = column === "wallet_balance_sandbox" ? "balance_sandbox" : "balance";
-    await db.execute({
-      sql: `UPDATE wallets SET ${walletColumn} = ${walletColumn} + ?, updated_at = datetime('now') WHERE id = ? AND owner_id = ?`,
-      args: [amount, info.walletId, userId],
-    });
-    const res = await db.execute({ sql: `SELECT ${walletColumn} as balance FROM wallets WHERE id = ?`, args: [info.walletId] });
-    balance = Number((res.rows[0] as Row)?.balance ?? 0);
-  } else {
-    await db.execute({
-      sql: `UPDATE users SET ${column} = ${column} + ?, updated_at = datetime('now') WHERE id = ?`,
-      args: [amount, userId],
-    });
-    const res = await db.execute({ sql: `SELECT ${column} as balance FROM users WHERE id = ?`, args: [userId] });
-    balance = Number((res.rows[0] as Row)?.balance ?? 0);
-  }
+  await db.execute({
+    sql: `UPDATE users SET ${column} = ${column} + ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [amount, userId],
+  });
+  const res = await db.execute({ sql: `SELECT ${column} as balance FROM users WHERE id = ?`, args: [userId] });
+  const balance = Number((res.rows[0] as Row)?.balance ?? 0);
   await recordLedgerEntry({ userId, amount, balanceAfter: balance, ...info });
   return balance;
 }
@@ -114,7 +97,6 @@ export async function creditWallet(
  * the write atomic in one statement, so two requests racing to spend the
  * same balance can't both succeed (the loser's UPDATE simply matches zero
  * rows). Returns the balance afterward, or null if there wasn't enough.
- * Same `walletId` convention as creditWallet.
  */
 export async function debitWallet(
   userId: string,
@@ -126,30 +108,16 @@ export async function debitWallet(
     counterpartyId?: string;
     note?: string;
     actorId?: string;
-    walletId?: string;
   },
 ): Promise<number | null> {
   const column = balanceColumn(info.environment);
-  let balance: number;
-  if (info.walletId) {
-    const walletColumn = column === "wallet_balance_sandbox" ? "balance_sandbox" : "balance";
-    const res = await db.execute({
-      sql: `UPDATE wallets SET ${walletColumn} = ${walletColumn} - ?, updated_at = datetime('now')
-            WHERE id = ? AND owner_id = ? AND ${walletColumn} >= ?`,
-      args: [amount, info.walletId, userId, amount],
-    });
-    if ((res.rowsAffected ?? 0) === 0) return null;
-    const balanceRes = await db.execute({ sql: `SELECT ${walletColumn} as balance FROM wallets WHERE id = ?`, args: [info.walletId] });
-    balance = Number((balanceRes.rows[0] as Row)?.balance ?? 0);
-  } else {
-    const res = await db.execute({
-      sql: `UPDATE users SET ${column} = ${column} - ?, updated_at = datetime('now') WHERE id = ? AND ${column} >= ?`,
-      args: [amount, userId, amount],
-    });
-    if ((res.rowsAffected ?? 0) === 0) return null;
-    const balanceRes = await db.execute({ sql: `SELECT ${column} as balance FROM users WHERE id = ?`, args: [userId] });
-    balance = Number((balanceRes.rows[0] as Row)?.balance ?? 0);
-  }
+  const res = await db.execute({
+    sql: `UPDATE users SET ${column} = ${column} - ?, updated_at = datetime('now') WHERE id = ? AND ${column} >= ?`,
+    args: [amount, userId, amount],
+  });
+  if ((res.rowsAffected ?? 0) === 0) return null;
+  const balanceRes = await db.execute({ sql: `SELECT ${column} as balance FROM users WHERE id = ?`, args: [userId] });
+  const balance = Number((balanceRes.rows[0] as Row)?.balance ?? 0);
   await recordLedgerEntry({ userId, amount: -amount, balanceAfter: balance, ...info });
   return balance;
 }
@@ -179,7 +147,6 @@ export async function payFromWallet(input: {
   environment: PlatformEnvironment;
   note?: string;
   actorId?: string;
-  walletId?: string;
 }): Promise<string | null> {
   const balance = await debitWallet(input.userId, input.amount, {
     type: "order_payment",
@@ -187,7 +154,6 @@ export async function payFromWallet(input: {
     orderId: input.orderId,
     note: input.note,
     actorId: input.actorId,
-    walletId: input.walletId,
   });
   if (balance === null) return null;
 
@@ -298,40 +264,6 @@ export async function transferWallet(input: {
     environment: input.environment,
     counterpartyId: input.fromUserId,
     note: input.note,
-  });
-  return { fromBalance, toBalance };
-}
-
-/**
- * Moves money between two of the SAME customer's own wallets — e.g. their
- * primary wallet and a named secondary one, or two secondary wallets.
- * `fromWalletId`/`toWalletId` omitted means the primary wallet; both can't
- * resolve to the same wallet. Debit-then-credit, same residual-risk shape
- * as transferWallet above.
- */
-export async function transferBetweenOwnWallets(input: {
-  ownerId: string;
-  fromWalletId?: string;
-  toWalletId?: string;
-  amount: number;
-  environment: PlatformEnvironment;
-  note?: string;
-}): Promise<{ fromBalance: number; toBalance: number } | null> {
-  const fromBalance = await debitWallet(input.ownerId, input.amount, {
-    type: "transfer_out",
-    environment: input.environment,
-    counterpartyId: input.ownerId,
-    note: input.note,
-    walletId: input.fromWalletId,
-  });
-  if (fromBalance === null) return null;
-
-  const toBalance = await creditWallet(input.ownerId, input.amount, {
-    type: "transfer_in",
-    environment: input.environment,
-    counterpartyId: input.ownerId,
-    note: input.note,
-    walletId: input.toWalletId,
   });
   return { fromBalance, toBalance };
 }

@@ -8,14 +8,11 @@ import { AppearanceSettings } from "../../components/AppearanceSettings";
 import { ChangePasswordPanel } from "../../components/ChangePasswordPanel";
 import { LanguageSettings } from "../../components/LanguageSettings";
 import { ProfilePhoto } from "../../components/ProfilePhoto";
-import { PracticeModeCard } from "../../components/PracticeMode";
 import { SavedLocations } from "../../components/SavedLocations";
 import { api, errorMessage } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
-import { useTranslate } from "../../lib/i18n";
 
 function MatchingPreference() {
-  const t = useTranslate();
   const { user, updateUser } = useAuth();
   const [enabledModes, setEnabledModes] = useState<MatchingMode[]>([]);
   const [busy, setBusy] = useState(false);
@@ -48,7 +45,7 @@ function MatchingPreference() {
 
   return (
     <section className="home-card space-y-2.5">
-      <h2 className="text-sm font-semibold text-ink">{t("account_matching_heading")}</h2>
+      <h2 className="text-sm font-semibold text-ink">How should riders be matched?</h2>
       {enabledModes.map((mode) => (
         <button
           key={mode}
@@ -76,12 +73,11 @@ function MatchingPreference() {
 }
 
 export default function AccountPage() {
-  const t = useTranslate();
   const { user, logout } = useAuth();
 
   return (
     <div className="space-y-5 px-4 pb-6 pt-4">
-      <h1 className="text-xl font-bold text-ink">{t("account_title")}</h1>
+      <h1 className="text-xl font-bold text-ink">Account</h1>
 
       <section className="home-card flex items-center gap-3">
         <ProfilePhoto />
@@ -96,12 +92,10 @@ export default function AccountPage() {
         className="home-card flex items-center gap-3 !rounded-2xl !py-3 text-sm font-semibold text-ink"
       >
         <Wallet className="h-5 w-5 text-gold" strokeWidth={1.75} aria-hidden />
-        {t("nav_wallet")}
+        Wallet
       </Link>
 
       <MatchingPreference />
-
-      <PracticeModeCard role="customer" />
 
       <AppearanceSettings />
 
@@ -126,7 +120,7 @@ export default function AccountPage() {
         className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[var(--border-faint)] px-4 text-sm font-bold text-ink"
       >
         <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden />
-        {t("log_out")}
+        Log out
       </button>
     </div>
   );

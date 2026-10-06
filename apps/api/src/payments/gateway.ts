@@ -37,30 +37,6 @@ export type GatewayResult = {
   statusMessage?: string;
 };
 
-export type PaymentProviderErrorCode =
-  | "payment_provider_not_configured"
-  | "payment_provider_auth_failed"
-  | "payment_provider_account_not_ready"
-  | "payment_provider_rejected"
-  | "payment_provider_unavailable";
-
-/** A provider failure whose customer-facing explanation is deliberately
- * separate from the upstream response. The upstream message is useful in
- * Worker logs, but only the reviewed `clientMessage` may cross the API
- * boundary — provider responses can contain implementation details. */
-export class PaymentProviderError extends Error {
-  constructor(
-    readonly provider: string,
-    readonly code: PaymentProviderErrorCode,
-    readonly clientMessage: string,
-    readonly httpStatus?: number,
-    readonly upstreamMessage?: string,
-  ) {
-    super(`${provider} request failed${httpStatus ? ` (${httpStatus})` : ""}`);
-    this.name = "PaymentProviderError";
-  }
-}
-
 export interface PaymentGatewayAdapter {
   key: string;
   displayName: string;

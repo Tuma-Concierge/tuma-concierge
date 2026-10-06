@@ -1,7 +1,7 @@
 "use client";
 
 import type { SavedLocation } from "@tuma/shared";
-import { ChevronRight, Home, Map, MapPin } from "lucide-react";
+import { Home, LocateFixed, Map, MapPin, Type } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
@@ -68,10 +68,10 @@ export function resolvePoint(
   return { area: point.area.trim() || undefined, address: point.address.trim() || undefined };
 }
 
-/** A progressive location picker shared by every order-creation flow.
- * Keep the parent screen quiet: a user may choose a saved place or open
- * the full-screen map. Search, current location and pin placement live in
- * that map step instead of competing for attention here. */
+/** Map/Text/Saved location picker shared by every order-creation flow and
+ * the "save a location" prompts. Tab order is Saved (when any exist), then
+ * Map, then Text — saved locations are the fastest path when available,
+ * and map stays left of text per the product's explicit ordering call. */
 export function LocationPicker({
   point,
   setPoint,
@@ -84,107 +84,179 @@ export function LocationPicker({
   detailsLabel?: string;
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const tabs: LocationTab[] = locations.length > 0 ? ["saved", "map", "text"] : ["map", "text"];
+
+  function useMyLocation() {
+    setPoint({
+      ...point,
+      mode: "map",
+      geoStatus: "locating",
+      selectedLocationId: null,
+      mapArea: null,
+      mapAddress: null,
+    });
+    if (!navigator.geolocation) {
+      setPoint({ ...point, mode: "map", geoStatus: "error" });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        setPoint({
+          ...point,
+          mode: "map",
+          geoStatus: "done",
+          selectedLocationId: null,
+          mapArea: null,
+          mapAddress: null,
+          geoCoords: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+        }),
+      () => setPoint({ ...point, mode: "map", geoStatus: "error" }),
+      { timeout: 10000 },
+    );
+  }
 
   const pinnedLabel = point.mapAddress || point.mapArea;
   const selected = locations.find((l) => l.id === point.selectedLocationId);
-  const hasMapLocation = point.mode === "map" && Boolean(point.geoCoords);
-  const selectedLabel = selected
-    ? [selected.label, selected.area, selected.address].filter(Boolean).join(" · ")
-    : pinnedLabel || (hasMapLocation ? "Location selected on the map" : null);
 
   return (
-    <div className="space-y-4">
-      {locations.length > 0 && (
-        <section className="space-y-2.5" aria-labelledby="saved-places-heading">
-          <h3 id="saved-places-heading" className="text-base font-bold text-ink">Saved places</h3>
-          <div className="grid gap-2">
+    <div className="space-y-3">
+      <div className="flex rounded-full bg-[rgb(var(--surface-muted))] p-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setPoint({ ...point, mode: tab })}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-xs font-bold ${
+              point.mode === tab ? "bg-[rgb(var(--surface-card))] text-ink shadow-sm" : "text-ink-500"
+            }`}
+          >
+            {tab === "saved" && <Home className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />}
+            {tab === "map" && <Map className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />}
+            {tab === "text" && <Type className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />}
+            {tab === "saved" ? "Saved" : tab === "map" ? "Map" : "Text address"}
+          </button>
+        ))}
+      </div>
+
+      {point.mode === "saved" && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
             {locations.map((loc) => (
               <button
                 key={loc.id}
                 type="button"
-                onClick={() => setPoint({ ...point, mode: "saved", selectedLocationId: loc.id })}
-                className={`flex min-h-12 w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-base font-semibold ${
+                onClick={() => setPoint({ ...point, selectedLocationId: loc.id })}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
                   point.selectedLocationId === loc.id
                     ? "border-gold bg-gold/10 text-ink"
                     : "border-[var(--border-faint)] text-ink-500"
                 }`}
               >
-                <Home className="h-5 w-5 shrink-0 text-gold" strokeWidth={2} aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-ink">{loc.label}</span>
-                  {(loc.area || loc.address) && (
-                    <span className="mt-0.5 block truncate text-sm font-normal text-ink-500">
-                      {[loc.area, loc.address].filter(Boolean).join(" · ")}
-                    </span>
-                  )}
-                </span>
+                {loc.label}
               </button>
             ))}
           </div>
-        </section>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setShowPicker(true)}
-        className="flex min-h-14 w-full items-center gap-3 rounded-2xl border-2 border-gold px-4 py-3 text-left text-base font-bold text-ink"
-      >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold">
-          <Map className="h-5 w-5" strokeWidth={2.25} aria-hidden />
-        </span>
-        <span className="flex-1">{hasMapLocation ? "Change location on the map" : "Select location on the map"}</span>
-        <ChevronRight className="h-5 w-5 text-ink-500" aria-hidden />
-      </button>
-
-      {selectedLabel && (
-        <div className="flex items-start gap-3 rounded-2xl bg-[rgb(var(--surface-muted))] p-4" aria-live="polite">
-          <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-gold" strokeWidth={2.25} aria-hidden />
-          <p className="min-w-0 flex-1 text-base font-semibold leading-6 text-ink">{selectedLabel}</p>
+          {selected && (selected.area || selected.address) && (
+            <p className="text-xs text-ink-500">{[selected.area, selected.address].filter(Boolean).join(" · ")}</p>
+          )}
         </div>
       )}
 
-      {hasMapLocation && (
-        <details className="group rounded-2xl border border-[var(--border-faint)] bg-[rgb(var(--surface-card))]">
-          <summary className="cursor-pointer list-none px-4 py-3.5 text-base font-semibold text-ink marker:hidden">
-            Add address details <span className="font-normal text-ink-500">(optional)</span>
-          </summary>
-          <div className="space-y-3 border-t border-[var(--border-faint)] p-4">
-            <div className="grid gap-3">
+      {point.mode === "map" && (
+        <div className="space-y-2">
+          {pinnedLabel && (
+            <div className="flex items-start gap-2 rounded-xl border border-gold bg-gold/10 p-3">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold" strokeWidth={2.25} aria-hidden />
+              <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{pinnedLabel}</p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--border-faint)] py-3 text-xs font-bold text-ink"
+            >
+              <Map className="h-3.5 w-3.5 text-gold" strokeWidth={2.25} aria-hidden />
+              {pinnedLabel ? "Change pin" : "Choose on map"}
+            </button>
+            <button
+              type="button"
+              onClick={useMyLocation}
+              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border py-3 text-xs font-bold ${
+                point.geoStatus === "done" && !pinnedLabel
+                  ? "border-gold bg-gold/10 text-ink"
+                  : "border-[var(--border-faint)] text-ink"
+              }`}
+            >
+              <LocateFixed className="h-3.5 w-3.5 text-gold" strokeWidth={2.25} aria-hidden />
+              {point.geoStatus === "locating"
+                ? "Locating…"
+                : point.geoStatus === "done" && !pinnedLabel
+                  ? "Using current location"
+                  : "Use my current location instead"}
+            </button>
+          </div>
+          {point.geoStatus === "error" && <p className="text-xs text-red-600">Couldn&apos;t get your location.</p>}
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+              Add address details <span className="font-normal normal-case text-ink-500/70">(optional)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-2">
               <input
                 value={point.area}
                 onChange={(e) => setPoint({ ...point, area: e.target.value })}
                 placeholder="Area (e.g. Kololo)"
-                className="min-h-12 w-full rounded-xl border border-[var(--border-faint)] px-4 text-base outline-none focus:border-gold"
+                className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
               />
               <input
                 value={point.address}
                 onChange={(e) => setPoint({ ...point, address: e.target.value })}
                 placeholder={detailsLabel}
-                className="min-h-12 w-full rounded-xl border border-[var(--border-faint)] px-4 text-base outline-none focus:border-gold"
+                className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
               />
             </div>
-            <p className="text-sm leading-5 text-ink-500">A landmark or house detail helps the rider find you.</p>
+            <p className="text-xs text-ink-500">
+              Riders find you faster when you add a landmark or house detail along with your map pin.
+            </p>
           </div>
-        </details>
+
+          {showPicker && (
+            <LocationMapPicker
+              initial={point.geoCoords ?? undefined}
+              onCancel={() => setShowPicker(false)}
+              onConfirm={(loc) => {
+                setPoint({
+                  ...point,
+                  mode: "map",
+                  geoCoords: { lat: loc.lat, lng: loc.lng },
+                  geoStatus: "done",
+                  selectedLocationId: null,
+                  mapArea: loc.area,
+                  mapAddress: loc.address,
+                });
+                setShowPicker(false);
+              }}
+            />
+          )}
+        </div>
       )}
 
-      {showPicker && (
-        <LocationMapPicker
-          initial={point.geoCoords ?? undefined}
-          onCancel={() => setShowPicker(false)}
-          onConfirm={(loc) => {
-            setPoint({
-              ...point,
-              mode: "map",
-              geoCoords: { lat: loc.lat, lng: loc.lng },
-              geoStatus: "done",
-              selectedLocationId: null,
-              mapArea: loc.area,
-              mapAddress: loc.address,
-            });
-            setShowPicker(false);
-          }}
-        />
+      {point.mode === "text" && (
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            value={point.area}
+            onChange={(e) => setPoint({ ...point, area: e.target.value, selectedLocationId: null })}
+            placeholder="Area (e.g. Kololo)"
+            className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
+          />
+          <input
+            value={point.address}
+            onChange={(e) => setPoint({ ...point, address: e.target.value, selectedLocationId: null })}
+            placeholder="Address / landmark"
+            className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
+          />
+        </div>
       )}
     </div>
   );

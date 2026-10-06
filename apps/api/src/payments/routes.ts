@@ -1,12 +1,65 @@
 import { Hono, type Context } from "hono";
 import { db } from "../db/client.js";
 import { requireAuth } from "../auth/middleware.js";
+import { newId } from "../lib/ids.js";
 import { verifyWebhookSignature } from "./flutterwave/wire.js";
-import { reconcileMerchantSettlement, reconcilePayment } from "./reconciliation.js";
+import { checkPaymentStatus } from "./service.js";
 
 export const paymentRoutes = new Hono();
 
 type Row = Record<string, unknown>;
+
+async function logEvent(orderId: string, stage: string, note: string, actorId: string) {
+  await db.execute({
+    sql: "INSERT INTO order_events (id, order_id, stage, note, actor_id) VALUES (?, ?, ?, ?, ?)",
+    args: [newId("evt"), orderId, stage, note, actorId],
+  });
+}
+
+/**
+ * Ask the provider what really happened to a pending payment and record it.
+ * Shared by the client poll and the Yo! webhook so both arrive at the same
+ * state by the same route — the provider's own answer, never a status
+ * handed to us by whoever made the request.
+ *
+ * Returns whether anything changed. Caller must have already established
+ * that the payment is still pending.
+ */
+async function applyPaymentStatus(payment: Row, actorId: string): Promise<boolean> {
+  const status = await checkPaymentStatus({
+    provider: payment.provider as string,
+    provider_ref: payment.provider_ref as string | null,
+    created_at: payment.created_at as string,
+  });
+  if (status === "pending") return false;
+
+  if (status === "failed") {
+    await db.execute({
+      sql: "UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ?",
+      args: [payment.id as string],
+    });
+    return true;
+  }
+
+  // Only flip to successful from pending, so two callers racing (a poll and
+  // a webhook landing together) can't advance the order's stage twice.
+  const settled = await db.execute({
+    sql: "UPDATE payments SET status = 'successful', updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
+    args: [payment.id as string],
+  });
+  if (settled.rowsAffected === 0) return false;
+
+  if (payment.type === "collection") {
+    const advanced = await db.execute({
+      sql: "UPDATE orders SET stage = 'Shop', updated_at = datetime('now') WHERE id = ? AND stage = 'Fund'",
+      args: [payment.order_id as string],
+    });
+    if (advanced.rowsAffected > 0) {
+      await logEvent(payment.order_id as string, "Shop", "Escrow funded — shopping started", actorId);
+    }
+  }
+  return true;
+}
 
 /**
  * Poll a payment's status against the mobile money provider (mock or live
@@ -32,7 +85,7 @@ paymentRoutes.get("/payments/:id/refresh", requireAuth, async (c) => {
   }
 
   try {
-    await reconcilePayment(id, user.sub);
+    await applyPaymentStatus(payment, user.sub);
     const updated = await db.execute({ sql: "SELECT * FROM payments WHERE id = ?", args: [id] });
     return c.json({ payment: updated.rows[0] });
   } catch (err) {
@@ -74,20 +127,6 @@ function callbackAuthorized(c: Context): boolean {
   return diff === 0;
 }
 
-async function reconcileSettlementCallback(provider: "yo" | "flutterwave", reference: string): Promise<boolean> {
-  const operation = await db.execute({
-    sql: `SELECT business_id FROM provider_operations
-          WHERE provider = ? AND business_type = 'merchant_settlement'
-            AND (provider_ref = ? OR business_id = ?)
-          ORDER BY created_at DESC LIMIT 1`,
-    args: [provider, reference, reference],
-  });
-  const settlementId = (operation.rows[0] as Row | undefined)?.business_id;
-  if (!settlementId) return false;
-  await reconcileMerchantSettlement(String(settlementId));
-  return true;
-}
-
 paymentRoutes.post("/payments/yo/callback", async (c) => {
   if (!callbackAuthorized(c)) {
     console.warn("Rejected unauthenticated Yo! callback from", c.req.header("cf-connecting-ip") ?? "unknown");
@@ -105,20 +144,12 @@ paymentRoutes.post("/payments/yo/callback", async (c) => {
     args: [reference, reference],
   });
   const payment = res.rows[0] as Row | undefined;
-  if (!payment) {
-    try {
-      return c.json({ received: true, matched: await reconcileSettlementCallback("yo", reference) });
-    } catch (err) {
-      console.error("Yo! settlement callback status check failed:", err);
-      return c.json({ received: true, matched: true, changed: false });
-    }
-  }
+  if (!payment) return c.json({ received: true, matched: false });
   if (payment.status !== "pending") return c.json({ received: true, matched: true, changed: false });
 
   try {
-    const before = String(payment.status);
-    const status = await reconcilePayment(String(payment.id), "yo-callback");
-    return c.json({ received: true, matched: true, changed: before !== status });
+    const changed = await applyPaymentStatus(payment, "yo-callback");
+    return c.json({ received: true, matched: true, changed });
   } catch (err) {
     console.error("Yo! callback status check failed:", err);
     return c.json({ received: true, matched: true, changed: false });
@@ -148,20 +179,12 @@ paymentRoutes.post("/payments/flutterwave/callback", async (c) => {
     args: [reference, reference],
   });
   const payment = res.rows[0] as Row | undefined;
-  if (!payment) {
-    try {
-      return c.json({ received: true, matched: await reconcileSettlementCallback("flutterwave", reference) });
-    } catch (err) {
-      console.error("Flutterwave settlement callback status check failed:", err);
-      return c.json({ received: true, matched: true, changed: false });
-    }
-  }
+  if (!payment) return c.json({ received: true, matched: false });
   if (payment.status !== "pending") return c.json({ received: true, matched: true, changed: false });
 
   try {
-    const before = String(payment.status);
-    const status = await reconcilePayment(String(payment.id), "flutterwave-callback");
-    return c.json({ received: true, matched: true, changed: before !== status });
+    const changed = await applyPaymentStatus(payment, "flutterwave-callback");
+    return c.json({ received: true, matched: true, changed });
   } catch (err) {
     console.error("Flutterwave callback status check failed:", err);
     return c.json({ received: true, matched: true, changed: false });

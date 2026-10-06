@@ -16,31 +16,8 @@
 /** Everything the three apps legitimately talk to. */
 const GOOGLE_SIGNIN = "https://accounts.google.com";
 const GOOGLE_AVATARS = "https://lh3.googleusercontent.com";
-const OSM_TILES = "https://*.tile.openstreetmap.org https://tile.openstreetmap.org";
+const OSM_TILES = "https://*.tile.openstreetmap.org";
 const OSM_GEOCODER = "https://nominatim.openstreetmap.org";
-/** In-app navigation's driving route (apps/{rider,customer}/lib/navTiles.ts). */
-const OSRM_ROUTER = "https://router.project-osrm.org";
-
-/**
- * The admin-selectable map providers (apps/api/src/maps/credentials.ts).
- * Every one of them has to be allowed here up front — the admin can switch
- * providers at any time without a redeploy, and a provider missing from
- * this list fails in the browser as "Couldn't load <provider>".
- */
-const MAPBOX = ["https://api.mapbox.com", "https://events.mapbox.com"];
-const GOOGLE_MAPS_SCRIPTS = ["https://maps.googleapis.com", "https://maps.gstatic.com"];
-const GOOGLE_MAPS_DATA = ["https://*.googleapis.com", "https://*.gstatic.com", "https://*.google.com"];
-const TILE_PROVIDERS = [
-  "https://api.maptiler.com",
-  "https://tiles.stadiamaps.com",
-  "https://*.tile.thunderforest.com",
-  // A CSP "*." wildcard needs at least one subdomain label, and Jawg serves
-  // tiles from the bare tile.jawg.io — without it every Jawg tile is blocked
-  // and the map renders as a grey box.
-  "https://*.tile.jawg.io",
-  "https://tile.jawg.io",
-  "https://api.tomtom.com",
-];
 
 /**
  * @param {object} [options]
@@ -49,7 +26,7 @@ const TILE_PROVIDERS = [
  */
 export function buildSecurityHeaders({ apiUrl = "", dev = false } = {}) {
   const api = apiUrl.trim().replace(/\/$/, "");
-  const connect = ["'self'", api, OSM_GEOCODER, OSRM_ROUTER, GOOGLE_SIGNIN, ...MAPBOX, ...GOOGLE_MAPS_DATA].filter(Boolean);
+  const connect = ["'self'", api, OSM_GEOCODER, GOOGLE_SIGNIN].filter(Boolean);
   // `next dev` talks to its hot-reload server over a websocket.
   if (dev) connect.push("ws://localhost:*", "ws://127.0.0.1:*");
 
@@ -64,13 +41,12 @@ export function buildSecurityHeaders({ apiUrl = "", dev = false } = {}) {
     // someone into clicking "Settle" or "Suspend".
     "frame-ancestors 'none'",
     "form-action 'self'",
-    `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} ${GOOGLE_SIGNIN} ${MAPBOX[0]} ${GOOGLE_MAPS_SCRIPTS.join(" ")}`,
+    `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} ${GOOGLE_SIGNIN}`,
     // Sign in with Google pulls its button stylesheet from accounts.google.com
     // — leave it out and the button renders unstyled.
-    // Mapbox GL and Google Maps load their own stylesheets/web fonts too.
-    `style-src 'self' 'unsafe-inline' ${GOOGLE_SIGNIN} ${MAPBOX[0]} https://fonts.googleapis.com`,
-    `img-src 'self' data: blob: ${OSM_TILES} https://*.openstreetmap.org ${GOOGLE_AVATARS} ${TILE_PROVIDERS.join(" ")} ${MAPBOX[0]} ${GOOGLE_MAPS_DATA.join(" ")}`,
-    "font-src 'self' data: https://fonts.gstatic.com",
+    `style-src 'self' 'unsafe-inline' ${GOOGLE_SIGNIN}`,
+    `img-src 'self' data: blob: ${OSM_TILES} https://*.openstreetmap.org ${GOOGLE_AVATARS}`,
+    "font-src 'self' data:",
     `media-src 'self' blob: ${api}`.trim(),
     `connect-src ${connect.join(" ")}`,
     `frame-src ${GOOGLE_SIGNIN}`,

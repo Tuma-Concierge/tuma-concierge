@@ -1,23 +1,7 @@
 "use client";
 
 import type { ChatMessage } from "@tuma/shared";
-import {
-  Ban,
-  Camera,
-  Check,
-  CheckCheck,
-  Clock,
-  Mic,
-  Pause,
-  Phone,
-  PhoneMissed,
-  PhoneOff,
-  Play,
-  Send,
-  Square,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Camera, Check, CheckCheck, Clock, Mic, Pause, Play, Send, Square, Trash2 } from "lucide-react";
 import { PhotoProvider, PhotoView } from "react-photo-view";
 import "react-photo-view/dist/react-photo-view.css";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,72 +10,12 @@ import { useAuth } from "../lib/auth-context";
 import { getQueuedMessages, queueMessage, removeQueuedMessage, type QueuedMessage } from "../lib/chat-outbox";
 import { compressImage } from "../lib/image-compress";
 import { useLivePolling } from "../lib/use-live-polling";
-import { useLongPress } from "../lib/use-long-press";
-import { useTranslate } from "../lib/i18n";
 import { useVoiceNoteMaxSeconds } from "../lib/useVoiceNoteMaxSeconds";
-import { MessageActionSheet, type MessageInfoRow } from "./MessageActionSheet";
-
-/** Converts an arbitrary image blob to PNG via canvas — some browsers'
- * Clipboard API only accepts image/png for ClipboardItem, so this is the
- * fallback when writing the blob's own mime type is rejected. */
-async function blobToPng(blob: Blob): Promise<Blob> {
-  const bitmap = await createImageBitmap(blob);
-  const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const ctx = canvas.getContext("2d");
-  ctx?.drawImage(bitmap, 0, 0);
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
-  });
-}
-
-function replyPreviewText(m: ChatMessage): string {
-  if (m.reply_to_deleted_at) return "This message was deleted";
-  if (m.reply_to_type === "image") return "📷 Photo";
-  if (m.reply_to_type === "voice") return "🎤 Voice message";
-  return m.reply_to_body ?? "";
-}
-
-function mediaPreviewText(type: string): string {
-  if (type === "image") return "📷 Photo";
-  if (type === "voice") return "🎤 Voice message";
-  return "";
-}
-
-/** WhatsApp-style call-log entry — centered, not attributed to either
- * side of the conversation, unlike every other bubble type. `mine`
- * reflects who placed the call (the message's sender_id), which only
- * changes the icon's direction, not the layout. */
-function CallLogEntry({ message, mine }: { message: ChatMessage; mine: boolean }) {
-  const t = useTranslate();
-  const missedOrDeclined = message.call_status === "missed" || message.call_status === "declined";
-  const Icon = message.call_status === "missed" ? PhoneMissed : message.call_status === "declined" ? PhoneOff : Phone;
-  return (
-    <div className="flex justify-center py-1">
-      <div
-        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium ${
-          missedOrDeclined ? "bg-red-500/10 text-red-600" : "bg-[rgb(var(--surface-muted))] text-ink-500"
-        }`}
-      >
-        <Icon className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
-        <span>{mine && message.call_status === "missed" ? t("chat_no_answer") : message.body}</span>
-        <span className="text-ink-500/60">· {formatTime(message.created_at)}</span>
-      </div>
-    </div>
-  );
-}
 
 function formatTime(iso: string): string {
   const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-function formatFullTime(iso: string): string {
-  const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
 /** m:ss, for a recording's running length or a preview's fixed one. */
@@ -139,7 +63,6 @@ function ImageBubble({ messageId }: { messageId: string }) {
  * fetches the audio); `justPlayed` flips the color immediately for
  * whoever's pressing play right now, without waiting for the next poll. */
 function VoiceBubble({ messageId, mine, playedAt }: { messageId: string; mine: boolean; playedAt: string | null }) {
-  const t = useTranslate();
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const [error, setError] = useState(false);
   const [justPlayed, setJustPlayed] = useState(false);
@@ -202,7 +125,7 @@ function VoiceBubble({ messageId, mine, playedAt }: { messageId: string; mine: b
         )}
       </span>
       <span className={`text-[13px] ${mine ? "" : played ? "text-ink-500" : "font-semibold text-ink"}`}>
-        {status === "loading" ? t("chat_voice_loading") : error ? t("chat_voice_error") : t("chat_voice_message")}
+        {status === "loading" ? "Loading…" : error ? "Couldn't play — tap to retry" : "Voice message"}
       </span>
     </button>
   );
@@ -220,61 +143,6 @@ function MessageTicks({ message }: { message: ChatMessage }) {
   return <Check className="h-3.5 w-3.5 text-ink-500/70" strokeWidth={2.5} aria-hidden />;
 }
 
-/** A single text/image/voice bubble — its own component (not inlined in
- * the messages .map()) purely so it can call the useLongPress hook, which
- * can't be called conditionally/in a loop. */
-function MessageBubble({
-  message,
-  mine,
-  onLongPress,
-}: {
-  message: ChatMessage;
-  mine: boolean;
-  onLongPress: (message: ChatMessage) => void;
-}) {
-  const longPress = useLongPress(() => onLongPress(message));
-  const isDeleted = !!message.deleted_at;
-
-  return (
-    <div className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
-      <div className={`flex max-w-[75%] flex-col ${mine ? "items-end" : "items-start"}`}>
-        <div
-          {...longPress}
-          className={`select-none text-[14px] leading-snug shadow-sm ${
-            message.type === "text" || isDeleted ? "px-4 py-2.5" : "p-1.5"
-          } ${
-            mine
-              ? "rounded-[20px] rounded-br-md bg-gold text-[#0A0A0A]"
-              : "rounded-[20px] rounded-bl-md bg-[rgb(var(--surface-card))] text-ink"
-          }`}
-        >
-          {message.reply_to_id && !isDeleted && (
-            <div className="mb-1.5 rounded-lg border-l-4 border-gold/70 bg-black/5 px-2 py-1 text-xs">
-              <p className="truncate opacity-80">{replyPreviewText(message)}</p>
-            </div>
-          )}
-          {isDeleted ? (
-            <span className="flex items-center gap-1.5 italic text-ink-500">
-              <Ban className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
-              This message was deleted
-            </span>
-          ) : (
-            <>
-              {message.type === "image" && <ImageBubble messageId={message.id} />}
-              {message.type === "voice" && <VoiceBubble messageId={message.id} mine={mine} playedAt={message.played_at} />}
-              {message.type === "text" && message.body}
-            </>
-          )}
-        </div>
-        <span className="mt-1 flex items-center gap-1 px-1 text-[10px] text-ink-500/70">
-          {formatTime(message.created_at)}
-          {mine && !isDeleted && <MessageTicks message={message} />}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 type Props = {
   orderId: string;
   /** "embedded" (default) sits inside a longer page as a bounded card.
@@ -285,7 +153,6 @@ type Props = {
 };
 
 export function OrderChat({ orderId, variant = "embedded" }: Props) {
-  const t = useTranslate();
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [queued, setQueued] = useState<QueuedMessage[]>([]);
@@ -295,8 +162,6 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
   const [recordSeconds, setRecordSeconds] = useState(0);
   const maxRecordSeconds = useVoiceNoteMaxSeconds();
   const [mediaError, setMediaError] = useState<string | null>(null);
-  const [actionSheetMessage, setActionSheetMessage] = useState<ChatMessage | null>(null);
-  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   // A stopped recording waits here — played back locally, discarded, or
   // sent — rather than uploading the instant the mic button is released.
   const [preview, setPreview] = useState<{ blob: Blob; url: string; duration: number } | null>(null);
@@ -374,17 +239,13 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
     const body = draft.trim();
     if (!body) return;
     setDraft("");
-    const replyToId = replyTo?.id;
-    setReplyTo(null);
     if (!navigator.onLine) {
-      // The offline outbox predates replies — a queued message sends
-      // without its quote rather than blocking on connectivity for it.
       setQueued((prev) => [...prev, queueMessage(orderId, body)]);
       return;
     }
     setSending(true);
     try {
-      await api.sendChat(orderId, body, replyToId);
+      await api.sendChat(orderId, body);
       load();
     } catch {
       setQueued((prev) => [...prev, queueMessage(orderId, body)]);
@@ -401,11 +262,9 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
     }
     setSending(true);
     setMediaError(null);
-    const replyToId = replyTo?.id;
     try {
       const compressed = await compressImage(file);
-      await api.sendChatMedia(orderId, "image", compressed, replyToId);
-      setReplyTo(null);
+      await api.sendChatMedia(orderId, "image", compressed);
       load();
     } catch {
       setMediaError("Couldn't send that photo. Please try again.");
@@ -481,10 +340,8 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
     const { blob, url } = preview;
     setSending(true);
     setMediaError(null);
-    const replyToId = replyTo?.id;
     try {
-      await api.sendChatMedia(orderId, "voice", blob, replyToId);
-      setReplyTo(null);
+      await api.sendChatMedia(orderId, "voice", blob);
       load();
       previewAudioRef.current?.pause();
       previewAudioRef.current = null;
@@ -498,63 +355,6 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
     }
   }
 
-  async function handleCopy(m: ChatMessage) {
-    try {
-      if (m.type === "text") {
-        await navigator.clipboard.writeText(m.body);
-        return;
-      }
-      if (m.type === "image") {
-        const blob = await api.chatMediaBlob(m.id);
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        } catch {
-          const png = await blobToPng(blob);
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-        }
-      }
-    } catch {
-      setMediaError("Couldn't copy that.");
-    }
-  }
-
-  async function handleShare(m: ChatMessage) {
-    try {
-      if (m.type === "text") {
-        await navigator.share({ text: m.body });
-        return;
-      }
-      if (m.type === "image" || m.type === "voice") {
-        const blob = await api.chatMediaBlob(m.id);
-        const file = new File([blob], m.type === "image" ? "photo.jpg" : "voice.webm", { type: blob.type });
-        if (navigator.canShare?.({ files: [file] })) {
-          await navigator.share({ files: [file] });
-        } else {
-          setMediaError("Sharing this file isn't supported on this device.");
-        }
-      }
-    } catch (err) {
-      // The user backing out of the native share sheet isn't a failure.
-      if ((err as Error)?.name !== "AbortError") setMediaError("Couldn't share that.");
-    }
-  }
-
-  async function handleDelete(m: ChatMessage, scope: "me" | "everyone") {
-    try {
-      await api.deleteChatMessage(m.id, scope);
-      load();
-    } catch {
-      setMediaError("Couldn't delete that message.");
-    }
-  }
-
-  function buildInfoRows(m: ChatMessage): MessageInfoRow[] {
-    const rows: MessageInfoRow[] = [{ label: "Sent", value: formatFullTime(m.created_at) }];
-    if (m.delivered_at) rows.push({ label: "Delivered", value: formatFullTime(m.delivered_at) });
-    rows.push({ label: "Read", value: m.read ? "Yes" : "Not yet" });
-    return rows;
-  }
-
   const bubbles = (
     <>
       {messages.length === 0 && queued.length === 0 && (
@@ -563,11 +363,27 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
       {messages.map((m) => {
         const mine = m.sender_id === user?.id;
 
-        if (m.type === "call") {
-          return <CallLogEntry key={m.id} message={m} mine={mine} />;
-        }
-
-        return <MessageBubble key={m.id} message={m} mine={mine} onLongPress={setActionSheetMessage} />;
+        return (
+          <div key={m.id} className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+            <div className={`flex max-w-[75%] flex-col ${mine ? "items-end" : "items-start"}`}>
+              <div
+                className={`text-[14px] leading-snug shadow-sm ${m.type === "text" ? "px-4 py-2.5" : "p-1.5"} ${
+                  mine
+                    ? "rounded-[20px] rounded-br-md bg-gold text-[#0A0A0A]"
+                    : "rounded-[20px] rounded-bl-md bg-[rgb(var(--surface-card))] text-ink"
+                }`}
+              >
+                {m.type === "image" && <ImageBubble messageId={m.id} />}
+                {m.type === "voice" && <VoiceBubble messageId={m.id} mine={mine} playedAt={m.played_at} />}
+                {m.type === "text" && m.body}
+              </div>
+              <span className="mt-1 flex items-center gap-1 px-1 text-[10px] text-ink-500/70">
+                {formatTime(m.created_at)}
+                {mine && <MessageTicks message={m} />}
+              </span>
+            </div>
+          </div>
+        );
       })}
       {queued.map((q) => (
         <div key={q.localId} className="flex items-end justify-end gap-2">
@@ -589,24 +405,6 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
   const composer = (
     <div className="space-y-1.5">
       {mediaError && <p className="px-1 text-xs text-red-600">{mediaError}</p>}
-      {replyTo && (
-        <div className="flex items-center gap-2 rounded-xl bg-[rgb(var(--surface-muted))] px-3 py-2">
-          <div className="min-w-0 flex-1 border-l-2 border-gold pl-2">
-            <p className="text-xs font-bold text-gold">Replying to {replyTo.sender_id === user?.id ? "yourself" : "your customer"}</p>
-            <p className="truncate text-xs text-ink-500">
-              {replyTo.deleted_at ? "This message was deleted" : replyTo.type === "text" ? replyTo.body : mediaPreviewText(replyTo.type)}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReplyTo(null)}
-            aria-label="Cancel reply"
-            className="shrink-0 rounded-full p-1 text-ink-500"
-          >
-            <X className="h-4 w-4" strokeWidth={2} aria-hidden />
-          </button>
-        </div>
-      )}
       <form onSubmit={send} className="flex items-center gap-2">
         <input
           ref={photoInputRef}
@@ -657,7 +455,7 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder={t("chat_message_placeholder")}
+                placeholder="Message…"
                 className="w-full rounded-full border border-[var(--border-faint)] bg-[rgb(var(--surface-input))] py-3.5 pl-4 pr-4 text-sm text-ink outline-none placeholder:text-ink-500 focus:border-gold"
               />
             )}
@@ -721,34 +519,15 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
     </div>
   );
 
-  const actionSheet = actionSheetMessage && (
-    <MessageActionSheet
-      open
-      onClose={() => setActionSheetMessage(null)}
-      mine={actionSheetMessage.sender_id === user?.id}
-      isDeleted={!!actionSheetMessage.deleted_at}
-      canCopy={actionSheetMessage.type === "text" || actionSheetMessage.type === "image"}
-      canShare={typeof navigator !== "undefined" && typeof navigator.share === "function"}
-      infoRows={buildInfoRows(actionSheetMessage)}
-      onReply={() => setReplyTo(actionSheetMessage)}
-      onCopy={() => handleCopy(actionSheetMessage)}
-      onShare={() => handleShare(actionSheetMessage)}
-      onDelete={(scope) => handleDelete(actionSheetMessage, scope)}
-    />
-  );
-
   if (variant === "full") {
     return (
       <PhotoProvider>
         <div className="flex min-h-0 flex-1 flex-col bg-cream">
-          <div className="tuma-chat-bg min-h-0 flex-1">
-            <div className="h-full space-y-3 overflow-y-auto px-4 py-4">{bubbles}</div>
-          </div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">{bubbles}</div>
           <div className="shrink-0 border-t border-[var(--border-faint)] bg-[rgb(var(--surface-card))] px-3 py-2.5">
             {composer}
           </div>
         </div>
-        {actionSheet}
       </PhotoProvider>
     );
   }
@@ -757,12 +536,11 @@ export function OrderChat({ orderId, variant = "embedded" }: Props) {
     <PhotoProvider>
       <section className="space-y-2.5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">Chat</h2>
-        <div className="tuma-chat-bg overflow-hidden rounded-[28px] bg-[rgb(var(--surface-muted))]">
-          <div className="max-h-80 space-y-3 overflow-y-auto p-4">{bubbles}</div>
+        <div className="max-h-80 space-y-3 overflow-y-auto rounded-[28px] bg-[rgb(var(--surface-muted))] p-4">
+          {bubbles}
         </div>
         {composer}
       </section>
-      {actionSheet}
     </PhotoProvider>
   );
 }

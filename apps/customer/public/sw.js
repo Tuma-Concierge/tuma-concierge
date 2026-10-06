@@ -1,5 +1,5 @@
-const STATIC_CACHE = "tuma-static-v2";
-const RUNTIME_CACHE = "tuma-runtime-v2";
+const STATIC_CACHE = "tuma-static-rollback-sep20-v3";
+const RUNTIME_CACHE = "tuma-runtime-rollback-sep20-v3";
 const OFFLINE_URL = "/offline.html";
 const STATIC_ASSETS = ["/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png", OFFLINE_URL];
 

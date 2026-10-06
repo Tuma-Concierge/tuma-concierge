@@ -84,13 +84,11 @@ export function JobPreviewModal({ job, busy, offline, onClose, onClaim, onApply 
             </div>
           )
         ) : (
-          <p className="py-6 text-center text-sm text-ink-500">
-            {job.is_ride ? "Passenger ride — no item list for this job." : "Parcel delivery — no item list for this job."}
-          </p>
+          <p className="py-6 text-center text-sm text-ink-500">Parcel delivery — no item list for this job.</p>
         )}
 
         <div className="flex justify-between border-t border-[var(--border-faint)] pt-3 text-sm font-bold text-ink">
-          <span>{job.is_ride ? "Fare" : "Delivery fee"}</span>
+          <span>Delivery fee</span>
           <span>{formatUgx(job.delivery_fee ?? job.final_total ?? job.estimated_total)}</span>
         </div>
 

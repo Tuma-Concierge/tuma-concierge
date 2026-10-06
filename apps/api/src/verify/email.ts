@@ -21,7 +21,7 @@ function fromAddress(): string {
 /** Where the app's own logo is hosted — email clients load images over
  * plain HTTP(S), not from the local bundle, so this has to be a real URL. */
 function logoUrl(): string {
-  return process.env.CUSTOMER_APP_URL_LOGO ?? "https://customer.tumaffe.online/brand/tuma-logo-navy.png";
+  return process.env.CUSTOMER_APP_URL_LOGO ?? "https://tumaffe.online/brand/tuma-logo-navy.png";
 }
 
 export function isResendConfigured(): boolean {

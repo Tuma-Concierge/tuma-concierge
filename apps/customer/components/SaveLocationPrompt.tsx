@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 import { Modal } from "./Modal";
 import { api, errorMessage } from "../lib/api";
-import { reverseGeocode } from "../lib/places";
 
 const LocationMapPicker = dynamic(() => import("./LocationMapPicker").then((m) => m.LocationMapPicker), { ssr: false });
 
@@ -66,15 +65,11 @@ export function SaveLocationPrompt({ onClose, onSaved }: { onClose: () => void; 
     }
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        // Save a real place name, never bare coordinates (lat/lng are stored separately).
-        const here = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
-        const named = here.label !== "Pinned location";
         setLocating(false);
         await persist({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
-          area: named ? (here.area ?? undefined) : undefined,
-          address: named ? (here.address ?? "Current location") : "Current location",
+          address: `Current location (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`,
         });
       },
       () => {

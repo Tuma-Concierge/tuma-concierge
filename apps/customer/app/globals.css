@@ -42,21 +42,12 @@
   --surface-input: 255 255 255;
   /* Surface tokens (SURFACE-TOKENS.md) */
   --radius-card: 24px;
-  --radius-drawer: 28px;
-  --radius-capsule: 9999px;
   --border-faint: rgba(10, 10, 10, 0.08);
   --border-faint-on-dark: rgba(247, 243, 238, 0.12);
   --shadow-card: 0 4px 16px rgba(10, 10, 10, 0.06), 0 1px 2px rgba(10, 10, 10, 0.04);
   --shadow-card-hover: 0 12px 28px rgba(10, 10, 10, 0.10), 0 4px 8px rgba(10, 10, 10, 0.06);
-  --shadow-float-capsule: 0 12px 32px -4px rgba(10, 10, 10, 0.12), 0 4px 12px rgba(10, 10, 10, 0.06);
-  --shadow-glow-gold: 0 6px 20px -2px rgba(201, 162, 39, 0.40);
-  --shadow-glow-green: 0 6px 20px -2px rgba(27, 122, 78, 0.40);
-  --shadow-inner-track: inset 0 2px 4px rgba(10, 10, 10, 0.08);
   --pad-card: 30px;
   --transition-raise: 200ms ease;
-  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.125);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-fluid: 260ms;
 }
 
 /* Dark mode — navy as the page background, gold stays the one constant
@@ -108,13 +99,8 @@
   --border-faint: rgba(247, 243, 238, 0.1);
 }
 
-html {
-  font-size: 17px;
-}
-
 body {
   @apply antialiased text-ink;
-  line-height: 1.55;
   background-color: rgb(var(--color-cream));
 }
 
@@ -148,26 +134,12 @@ body {
 
 /* Text-like form fields default to --surface-input instead of the browser's
    own `color-scheme: dark` fill (a flat gray unrelated to the app's
-   palette). NOTE: this selector outranks Tailwind bg-* utilities, so a bare
-   `bg-transparent` on an input does NOT work — wrap multi-part fields in
-   .field-box (below) instead. */
+   palette). A component that sets its own bg-* class (e.g. bg-transparent
+   inside a row) still wins — Tailwind's class specificity beats this. */
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
 textarea,
 select {
   background-color: rgb(var(--surface-input));
-}
-
-/* RULE — a form field is ONE solid colour, edge to edge (tabs are exempt:
-   they may use their own tinted/selected colours). Never put an input
-   of one shade inside a box of another, and never put a tinted chip/button
-   inside a field. When a field is made of several parts (icon + input +
-   button), the wrapper gets .field-box: it owns the single fill, and any
-   input/select/textarea inside it is transparent so no second tone shows. */
-.field-box {
-  background-color: rgb(var(--surface-input));
-}
-.field-box :is(input, select, textarea):not([type="checkbox"], [type="radio"]) {
-  background-color: transparent;
 }
 
 /* Leaflet map picker, themed to match the app's cream/navy/gold palette in
@@ -215,17 +187,6 @@ select {
   opacity: 1;
 }
 
-/* Providers that ship their own designed light and dark styles (Jawg) swap
-   tile URLs by theme instead (see components/maps/OsmStyledPicker.tsx), so
-   none of the recoloring above is applied on top of them. */
-.tuma-map.tuma-map-native .leaflet-tile-pane {
-  filter: none !important;
-}
-
-.tuma-map.tuma-map-native .tuma-map-tint {
-  display: none;
-}
-
 .tuma-marker {
   background: transparent !important;
   border: none !important;
@@ -270,85 +231,4 @@ select {
 
 .tuma-map .leaflet-marker-icon {
   filter: drop-shadow(0 3px 6px rgba(10, 10, 10, 0.35));
-}
-
-/* Fluid Soft UI Animations & Utilities */
-@keyframes greenSuccessFlash {
-  0% { opacity: 0; transform: scale(0.96); }
-  25% { opacity: 1; transform: scale(1); }
-  80% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; pointer-events: none; }
-}
-
-@keyframes slideDrawerUp {
-  from { transform: translateY(100%); opacity: 0.6; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes pulseGlowGold {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 162, 39, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(201, 162, 39, 0); }
-}
-
-.animate-success-flash {
-  animation: greenSuccessFlash 1200ms var(--ease-out-expo) forwards;
-}
-
-.animate-drawer-in {
-  animation: slideDrawerUp var(--duration-fluid) var(--ease-out-expo) forwards;
-}
-
-.animate-glow-gold {
-  animation: pulseGlowGold 2s infinite;
-}
-
-.soft-capsule {
-  border-radius: var(--radius-capsule);
-  box-shadow: var(--shadow-float-capsule);
-  border: 1px solid var(--border-faint);
-  background: rgb(var(--surface-card) / 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.soft-drawer {
-  border-top-left-radius: var(--radius-drawer);
-  border-top-right-radius: var(--radius-drawer);
-  box-shadow: var(--shadow-float-capsule);
-  border-top: 1px solid var(--border-faint);
-  background: rgb(var(--surface-card));
-}
-
-/* Faint grocery/delivery doodle wallpaper behind chat messages (WhatsApp-style).
-   A pseudo-element rather than a background-image directly on the scrollable
-   container, so its low opacity doesn't fade the bubbles sitting on top of it. */
-.tuma-chat-bg {
-  position: relative;
-  isolation: isolate;
-}
-
-.tuma-chat-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: url("/images/chat-pattern.webp");
-  background-repeat: repeat;
-  background-size: 400px auto;
-  opacity: 0.05;
-  pointer-events: none;
-}
-
-/* Black line art reads as near-invisible on a dark navy background, so dark
-   mode inverts it to light strokes instead — same trick as .tuma-map-tint. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tuma-chat-bg::before {
-    filter: invert(1);
-    opacity: 0.07;
-  }
-}
-
-:root[data-theme="dark"] .tuma-chat-bg::before {
-  filter: invert(1);
-  opacity: 0.07;
 }

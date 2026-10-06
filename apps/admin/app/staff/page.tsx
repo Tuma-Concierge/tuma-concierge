@@ -110,7 +110,7 @@ function InviteForm({ onInvited, onCancel }: { onInvited: () => void; onCancel: 
           </label>
         ))}
       </div>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       <button type="submit" disabled={busy} className="min-h-11 w-full rounded-full bg-gold px-4 text-sm font-bold text-ink-gold disabled:opacity-60">
         {busy ? "Sending invite…" : "Send invite"}
       </button>
@@ -306,7 +306,7 @@ export default function StaffPage() {
         />
       )}
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {staff === null ? (
         <p className="text-sm text-ink-500">Loading…</p>

@@ -2,13 +2,11 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { AppShell } from "../components/AppShell";
-import { CallOverlay } from "../components/CallOverlay";
 import { InstallPrompt } from "../components/InstallPrompt";
 import { OfflineBanner } from "../components/OfflineBanner";
 import { PushNotifications } from "../components/PushNotifications";
 import { ServiceWorkerRegister } from "../components/ServiceWorkerRegister";
 import { AuthProvider } from "../lib/auth-context";
-import { CallsProvider } from "../lib/calls-context";
 import { LanguageProvider } from "../lib/i18n";
 
 // Runs before paint so there's no flash of the wrong theme — reads the
@@ -68,11 +66,8 @@ export default function RootLayout({
         <OfflineBanner />
         <AuthProvider>
           <LanguageProvider>
-            <CallsProvider>
-              <AppShell>{children}</AppShell>
-              <PushNotifications />
-              <CallOverlay />
-            </CallsProvider>
+            <AppShell>{children}</AppShell>
+            <PushNotifications />
           </LanguageProvider>
         </AuthProvider>
         <InstallPrompt />

@@ -18,8 +18,7 @@ Per environment: `local` | `preview` | `staging` | `prod`
 - Public map key only if required; restrict by HTTP referrer
 
 ## Storage (R2)
-- `RIDER_DOCS` Worker R2 binding (private rider, order, chat, restaurant, and merchant KYC files)
-- Optional S3-compatible keys only if a non-Worker process must access the bucket
+- Prefer Worker R2 binding; optional S3-compat keys if needed
 
 ## WebRTC TURN
 - `TURN_URLS`
@@ -33,7 +32,6 @@ Per environment: `local` | `preview` | `staging` | `prod`
 
 ## App
 - `JWT_SECRET` / `SESSION_SECRET`
-- `CREDENTIALS_ENCRYPTION_KEY` (required to encrypt provider credentials and merchant settlement destinations)
 - `CORS_ORIGINS`
 
 Do not paste secret values into chat, issues, or commits.

@@ -9,7 +9,6 @@ export const STAGE_LABELS: Record<OrderStageValue, string> = {
   Approve: "Approved",
   Deliver: "En route",
   Arrived: "Rider has arrived",
-  PickedUp: "On the way",
   Handover: "Handover",
   Settle: "Delivered",
 };
@@ -23,11 +22,8 @@ export function stageProgressPct(stage: string): number {
   return Math.round(((stageIndex(stage) + 1) / ORDER_STAGES.length) * 100);
 }
 
-export function stageLabel(stage: string, type?: OrderRow["type"], isRide?: boolean): string {
-  if (type === "parcel" && stage === "Shop") return isRide ? "Finding your rider" : "Picking up";
-  if (isRide && stage === "Deliver") return "Rider heading to you";
-  if (isRide && stage === "Arrived") return "Rider is here";
-  if (isRide && stage === "Settle") return "Trip complete";
+export function stageLabel(stage: string, type?: OrderRow["type"]): string {
+  if (type === "parcel" && stage === "Shop") return "Picking up";
   return STAGE_LABELS[stage as OrderStageValue] ?? stage;
 }
 
@@ -37,7 +33,7 @@ export function formatUgx(amount: number | null | undefined): string {
 }
 
 export function orderTitle(order: OrderRow): string {
-  const noun = order.is_ride ? "Ride" : order.type === "parcel" ? "Parcel" : "Order";
+  const noun = order.type === "parcel" ? "Parcel" : "Order";
   return order.destination_area ? `${noun} to ${order.destination_area}` : `${noun} #${order.id.slice(-6)}`;
 }
 

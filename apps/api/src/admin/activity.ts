@@ -6,7 +6,7 @@
 
 import { db } from "../db/client.js";
 import { newId } from "../lib/ids.js";
-import { setBiddingSettings, setCarSettings, setJobExpirySettings, setMatchingModesEnabled, setSetting } from "../lib/settings.js";
+import { setMatchingModesEnabled, setSetting } from "../lib/settings.js";
 import type { AdminRole } from "./permissions.js";
 
 type Row = Record<string, unknown>;
@@ -73,10 +73,6 @@ const REVERT_HANDLERS: Record<string, (entityId: string, before: Row) => Promise
     });
   },
   "settings.update": async (_entityId, before) => {
-    if (before.timeFees != null) await setSetting("time_fees", JSON.stringify(before.timeFees));
-    if (before.jobExpiry != null) await setJobExpirySettings(before.jobExpiry as never);
-    if (before.bidding != null) await setBiddingSettings(before.bidding as never);
-    if (before.car != null) await setCarSettings(before.car as never);
     if (before.deliveryRatePerKm != null) await setSetting("delivery_rate_per_km", String(before.deliveryRatePerKm));
     if (before.serviceRangeKm != null) await setSetting("service_range_km", String(before.serviceRangeKm));
     if (before.enabledModes != null) await setMatchingModesEnabled(before.enabledModes as never);

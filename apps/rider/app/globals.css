@@ -99,13 +99,8 @@
   --border-faint: rgba(247, 243, 238, 0.1);
 }
 
-html {
-  font-size: 17px;
-}
-
 body {
   @apply antialiased text-ink;
-  line-height: 1.55;
   background-color: rgb(var(--color-cream));
 }
 
@@ -139,26 +134,12 @@ body {
 
 /* Text-like form fields default to --surface-input instead of the browser's
    own `color-scheme: dark` fill (a flat gray unrelated to the app's
-   palette). NOTE: this selector outranks Tailwind bg-* utilities, so a bare
-   `bg-transparent` on an input does NOT work — wrap multi-part fields in
-   .field-box (below) instead. */
+   palette). A component that sets its own bg-* class (e.g. bg-transparent
+   inside a row) still wins — Tailwind's class specificity beats this. */
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
 textarea,
 select {
   background-color: rgb(var(--surface-input));
-}
-
-/* RULE — a form field is ONE solid colour, edge to edge (tabs are exempt:
-   they may use their own tinted/selected colours). Never put an input
-   of one shade inside a box of another, and never put a tinted chip/button
-   inside a field. When a field is made of several parts (icon + input +
-   button), the wrapper gets .field-box: it owns the single fill, and any
-   input/select/textarea inside it is transparent so no second tone shows. */
-.field-box {
-  background-color: rgb(var(--surface-input));
-}
-.field-box :is(input, select, textarea):not([type="checkbox"], [type="radio"]) {
-  background-color: transparent;
 }
 
 /* Leaflet map picker, themed to match the app's cream/navy/gold palette in
@@ -206,17 +187,6 @@ select {
   opacity: 1;
 }
 
-/* Providers that ship their own designed light and dark styles (Jawg) swap
-   tile URLs by theme instead (see components/maps/OsmStyledPicker.tsx), so
-   none of the recoloring above is applied on top of them. */
-.tuma-map.tuma-map-native .leaflet-tile-pane {
-  filter: none !important;
-}
-
-.tuma-map.tuma-map-native .tuma-map-tint {
-  display: none;
-}
-
 .tuma-marker {
   background: transparent !important;
   border: none !important;
@@ -261,38 +231,4 @@ select {
 
 .tuma-map .leaflet-marker-icon {
   filter: drop-shadow(0 3px 6px rgba(10, 10, 10, 0.35));
-}
-
-/* Faint grocery/delivery doodle wallpaper behind chat messages (WhatsApp-style).
-   A pseudo-element rather than a background-image directly on the scrollable
-   container, so its low opacity doesn't fade the bubbles sitting on top of it. */
-.tuma-chat-bg {
-  position: relative;
-  isolation: isolate;
-}
-
-.tuma-chat-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: url("/images/chat-pattern.webp");
-  background-repeat: repeat;
-  background-size: 400px auto;
-  opacity: 0.05;
-  pointer-events: none;
-}
-
-/* Black line art reads as near-invisible on a dark navy background, so dark
-   mode inverts it to light strokes instead — same trick as .tuma-map-tint. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tuma-chat-bg::before {
-    filter: invert(1);
-    opacity: 0.07;
-  }
-}
-
-:root[data-theme="dark"] .tuma-chat-bg::before {
-  filter: invert(1);
-  opacity: 0.07;
 }

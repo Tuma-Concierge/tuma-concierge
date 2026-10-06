@@ -1,19 +1,15 @@
 {
   "name": "tuma-restaurant",
-  "main": ".open-next/worker.js",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-09-12",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
-  "routes": [{ "pattern": "restaurant.tumaffe.online", "custom_domain": true }],
-  "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
-  },
-  "vars": {
-    // Works around a known opennextjs-cloudflare bug (pnpm's symlinked
-    // node_modules breaks the middleware-manifest.json inlining, causing an
-    // unsupported dynamic require() at runtime — opennextjs/opennextjs-cloudflare#1232).
-    // Safe here: neither app uses Next.js middleware.
-    "NEXT_PRIVATE_MINIMAL_MODE": "1"
-  }
+  "routes": [
+    {
+      "pattern": "restaurant.tumaffe.online",
+      "custom_domain": true
+    }
+  ]
 }
