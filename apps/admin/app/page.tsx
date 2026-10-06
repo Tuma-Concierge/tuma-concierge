@@ -66,8 +66,8 @@ export default function OverviewPage() {
               Simulated payments
             </p>
             <p className="text-xs leading-relaxed text-red-700 dark:text-red-300">
-              No real money moves. Escrow collections succeed without charging anyone, rider wallet balances are
-              fictional, and withdrawals pay out nothing. Every figure below is test data — don&apos;t onboard real
+              No real money moves. Collections and automatic payouts are simulated.
+              Every figure below is test data — don&apos;t onboard real
               riders or settle real orders until mobile money is live.
             </p>
           </div>

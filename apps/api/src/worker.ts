@@ -1,4 +1,5 @@
 import app from "./app.js";
+import {reconcileOrderPayouts} from "./payments/order-payout.js";
 import { setAiBinding, type AiBinding } from "./ai/binding.js";
 import { setD1Binding, type D1Database } from "./db/client.js";
 import { setR2Binding, type R2Bucket } from "./storage/r2.js";
@@ -15,6 +16,11 @@ type WorkerEnv = Record<string, unknown> & { DB?: D1Database; RIDER_DOCS?: R2Buc
  * the app keeps working unchanged. The D1 binding (`env.DB`) is registered
  * separately since it isn't a string. */
 export default {
+  scheduled(_event: unknown, env: WorkerEnv, ctx: Pick<CfExecutionContext,"waitUntil">): void {
+    for (const [key, value] of Object.entries(env)) if (typeof value === "string") process.env[key] = value;
+    setD1Binding(env.DB);
+    ctx.waitUntil(reconcileOrderPayouts());
+  },
   fetch(request: Request, env: WorkerEnv, ctx: CfExecutionContext): Response | Promise<Response> {
     for (const [key, value] of Object.entries(env)) {
       if (typeof value === "string") process.env[key] = value;

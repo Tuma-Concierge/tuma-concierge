@@ -9,12 +9,15 @@ import {
   getDeliverySettings,
   getMatchingSettings,
   getPaymentsDemoMode,
+  getPaymentMethods,
+  getSetting,
   getPlatformEnvironment,
   getVoiceNoteMaxSeconds,
   getWalletSettings,
   setActiveProviders,
   setMatchingModesEnabled,
   setPaymentsDemoMode,
+  setPaymentMethods,
   setPlatformEnvironment,
   setSetting,
   type PaymentProviderIdentity,
@@ -25,7 +28,7 @@ import { paymentsIntegrationStatus } from "../payments/service.js";
 export const settingsRoutes = new Hono();
 
 async function fullSettings() {
-  const [delivery, matching, activeProviders, demoMode, wallet, voiceNoteMaxSeconds, platformEnvironment] =
+  const [delivery, matching, activeProviders, demoMode, wallet, voiceNoteMaxSeconds, platformEnvironment, paymentMethods] =
     await Promise.all([
       getDeliverySettings(),
       getMatchingSettings(),
@@ -34,6 +37,7 @@ async function fullSettings() {
       getWalletSettings(),
       getVoiceNoteMaxSeconds(),
       getPlatformEnvironment(),
+      getPaymentMethods(),
     ]);
   return {
     ...delivery,
@@ -45,6 +49,8 @@ async function fullSettings() {
     walletMaxTopup: wallet.maxTopup,
     voiceNoteMaxSeconds,
     platformEnvironment,
+    paymentMethods,
+    payoutCheckSeconds: Number(await getSetting("payout_check_seconds")),
   };
 }
 
@@ -66,6 +72,9 @@ const updateSchema = z.object({
   maxAssignmentMinutes: z.number().int().positive().max(120).optional(),
   paymentsActiveProviders: z.array(z.enum(["yo", "flutterwave"])).min(1).max(2).optional(),
   paymentsDemoMode: z.boolean().optional(),
+  paymentMethods: z.array(z.enum(["cash", "mobile_money"])).min(1, "Keep at least one payment method active").max(2)
+    .refine((methods) => new Set(methods).size === methods.length, "Payment methods must be unique").optional(),
+  payoutCheckSeconds: z.number().int().min(60).max(3600).optional(),
   walletUnverifiedCap: z.number().int().positive().max(100_000_000).optional(),
   walletVerifiedCap: z.number().int().positive().max(100_000_000).optional(),
   walletMaxTopup: z.number().int().positive().max(100_000_000).optional(),
@@ -73,6 +82,8 @@ const updateSchema = z.object({
 });
 
 const PAYMENTS_FIELDS = [
+  "paymentMethods",
+  "payoutCheckSeconds",
   "paymentsActiveProviders",
   "paymentsDemoMode",
   "walletUnverifiedCap",
@@ -98,6 +109,11 @@ settingsRoutes.put(
     }
 
     const before = await fullSettings();
+    if (parsed.data.paymentMethods) {
+      // One atomic settings row: concurrent saves cannot disable both methods.
+      await setPaymentMethods(parsed.data.paymentMethods);
+    }
+    if (parsed.data.payoutCheckSeconds != null) await setSetting("payout_check_seconds", String(parsed.data.payoutCheckSeconds));
 
     if (parsed.data.deliveryRatePerKm != null) {
       await setSetting("delivery_rate_per_km", String(parsed.data.deliveryRatePerKm));

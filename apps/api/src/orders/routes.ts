@@ -5,18 +5,21 @@ import { db } from "../db/client.js";
 import { requireAuth, requireRole } from "../auth/middleware.js";
 import { haversineKm } from "../lib/geo.js";
 import { newId, newPin } from "../lib/ids.js";
-import { legacyPayout, supportsLegacyOrder } from "../lib/rollback-compat.js";
+import { supportsLegacyOrder } from "../lib/rollback-compat.js";
+import {startOrderPayout} from "../payments/order-payout.js";
+import {requireAutomaticPaymentProviders} from "../payments/service.js";
 import { baseMimeType, extensionForMime } from "../lib/mime.js";
 import { consume, tooManyRequests } from "../lib/ratelimit.js";
-import { getDeliverySettings, getMatchingSettings, getMaxOrderValue, getPlatformEnvironment } from "../lib/settings.js";
+import { getDeliverySettings, getMatchingSettings, getMaxOrderValue, getPlatformEnvironment, getPaymentMethods } from "../lib/settings.js";
 import { notifyUser } from "../lib/webpush.js";
 import { currentVisibilityRadiusKm, orderMatchPoint, parseDbTimestamp } from "./matching.js";
 import { redactOrder } from "./visibility.js";
 import type { MatchingMode, MobileMoneyNetwork } from "@tuma/shared";
+import {detectMobileMoneyNetwork} from "@tuma/shared";
 import { initiateCollection, mobileMoneyNetworkLabel, UnsupportedNetworkError } from "../payments/service.js";
 import { getR2Bucket, uploadResponseHeaders } from "../storage/r2.js";
 import { appBaseUrl } from "../verify/service.js";
-import { payFromWallet } from "../wallet/service.js";
+
 
 function paymentReturnUrl(orderId: string): string {
   return `${appBaseUrl("customer")}/orders/${orderId}?payment_return=1`;
@@ -253,7 +256,7 @@ const createOrderSchema = z.object({
   destinationAddress: z.string().max(240).optional(),
   destinationLat: z.number().optional(),
   destinationLng: z.number().optional(),
-  paymentRail: z.enum(["escrow", "float"]).default("escrow"),
+  paymentRail: z.enum(["escrow", "float"]).optional(),
   estimatedTotal: z.number().int().nonnegative().optional(),
 });
 
@@ -262,6 +265,11 @@ orderRoutes.post("/orders", async (c) => {
   const parsed = createOrderSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
   const d = parsed.data;
+  const enabledMethods = await getPaymentMethods();
+  const paymentRail = d.paymentRail ?? (enabledMethods.includes("cash") ? "float" : "escrow");
+  if (!enabledMethods.includes(paymentRail === "float" ? "cash" : "mobile_money")) {
+    return c.json({error: "payment_method_disabled", message: "This payment method is no longer available. Choose an active method."}, 409);
+  }
 
   const list = await db.execute({
     sql: "SELECT * FROM lists WHERE id = ?",
@@ -348,6 +356,10 @@ orderRoutes.post("/orders", async (c) => {
   // currently active — keeps a list+order pair consistent even if an admin
   // flips platform_environment in the gap between the two requests.
   const orderEnvironment = (listRow.environment as string | undefined) === "sandbox" ? "sandbox" : "live";
+  if (paymentRail === "escrow") {
+    try { await requireAutomaticPaymentProviders(orderEnvironment === "sandbox"); }
+    catch (error) {return c.json({error:"mobile_money_unavailable",message:error instanceof Error ? error.message : "Mobile money is unavailable."},409);}
+  }
   await db.execute({
     sql: `INSERT INTO orders (
             id, list_id, customer_id, stage, type, payment_rail, estimated_total, delivery_fee,
@@ -361,7 +373,7 @@ orderRoutes.post("/orders", async (c) => {
       d.listId,
       user.sub,
       d.type,
-      d.paymentRail,
+      paymentRail,
       estimatedTotal,
       deliveryFee,
       d.pickupArea ?? null,
@@ -987,15 +999,7 @@ orderRoutes.post("/orders/:id/cancel", async (c) => {
 // Fund (escrow via mobile money collection, or float)
 // ---------------------------------------------------------------------------
 
-const fundSchema = z
-  .object({
-    msisdn: z.string().min(6).max(20).optional(),
-    useWallet: z.boolean().optional(),
-    // Pay from someone else's wallet instead of your own — only valid
-    // when that owner has an active wallet_shares grant to this customer.
-    walletOwnerId: z.string().optional(),
-  })
-  .refine((data) => !!data.msisdn || !!data.useWallet, { message: "Provide a mobile money number or pay from wallet" });
+const fundSchema = z.object({msisdn: z.string().min(6).max(20)}).strict();
 
 orderRoutes.post("/orders/:id/fund", async (c) => {
   const id = c.req.param("id");
@@ -1026,32 +1030,9 @@ orderRoutes.post("/orders/:id/fund", async (c) => {
 
   const parsed = fundSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-
-  if (parsed.data.useWallet) {
-    let walletOwnerId = user.sub;
-    if (parsed.data.walletOwnerId && parsed.data.walletOwnerId !== user.sub) {
-      const share = await db.execute({
-        sql: "SELECT 1 FROM wallet_shares WHERE wallet_id IS NULL AND owner_id = ? AND grantee_id = ? AND status = 'active'",
-        args: [parsed.data.walletOwnerId, user.sub],
-      });
-      if (share.rows.length === 0) return c.json({ error: "wallet_not_shared" }, 403);
-      walletOwnerId = parsed.data.walletOwnerId;
-    }
-    const sharedSpend = walletOwnerId !== user.sub;
-
-    const paymentId = await payFromWallet({
-      userId: walletOwnerId,
-      amount,
-      orderId: id,
-      note: `Order ${id}`,
-      actorId: sharedSpend ? user.sub : undefined,
-      environment: order.environment as "live" | "sandbox",
-    });
-    if (!paymentId) return c.json({ error: "insufficient_wallet_balance" }, 409);
-
-    await touchOrder(id, { stage: "Shop" });
-    await logEvent(id, "Fund", sharedSpend ? "Paid from a shared wallet — shopping started" : "Paid from wallet — shopping started", user.sub);
-    return c.json({ order: await getOrder(id), payment: { id: paymentId, status: "successful", network: null } });
+  const rider = (await db.execute({sql:"SELECT momo_msisdn FROM riders WHERE user_id = ?",args:[String(order.rider_id ?? "")]})).rows[0];
+  if (!rider || !detectMobileMoneyNetwork(String(rider.momo_msisdn ?? ""))) {
+    return c.json({error:"rider_mobile_money_required",message:"The assigned rider needs a valid mobile-money number before you can pay."},409);
   }
 
   const paymentId = newId("pay");
@@ -1060,6 +1041,7 @@ orderRoutes.post("/orders/:id/fund", async (c) => {
   let provider: string;
   let redirectUrl: string | undefined;
   try {
+    await requireAutomaticPaymentProviders(order.environment === "sandbox");
     const initiated = await initiateCollection({
       referenceId: paymentId,
       msisdn: parsed.data.msisdn,
@@ -1574,40 +1556,10 @@ orderRoutes.post("/orders/:id/settle", async (c) => {
 
   const total = (order.final_total as number | null) ?? (order.estimated_total as number | null) ?? 0;
 
-  let released = 0;
-  if (order.payment_rail === "escrow" && order.rider_id) {
-    // Release only what escrow actually holds, never `final_total`. An
-    // approved fee proposal or substitution raises `final_total` after the
-    // collection has already happened, with no top-up charged — paying that
-    // out would hand the rider money the platform never received, which is
-    // exactly the hole a rider colluding with a throwaway customer account
-    // would mint from. Anything agreed above what was collected is a debt to
-    // settle out of band, so it's logged rather than silently paid.
-    const collectedRes = await db.execute({
-      sql: `SELECT COALESCE(SUM(amount), 0) as collected FROM payments
-            WHERE order_id = ? AND type = 'collection' AND status = 'successful'`,
-      args: [id],
-    });
-    released = Number((collectedRes.rows[0] as Row)?.collected ?? 0);
-
-    const feeResult = await db.execute({sql: "SELECT * FROM order_fees WHERE order_id = ?", args: [id]});
-    const payout = legacyPayout(released, feeResult.rows[0] as Row | undefined);
-
-    if (released > 0) {
-      const balanceColumn = order.environment === "sandbox" ? "wallet_balance_sandbox" : "wallet_balance";
-      await db.execute({
-        sql: `UPDATE riders SET ${balanceColumn} = ${balanceColumn} + ?, updated_at = datetime('now') WHERE user_id = ?`,
-        args: [payout, order.rider_id as string],
-      });
-    }
-    if (released < total) {
-      await logEvent(
-        id,
-        "Settle",
-        `Shortfall — ${formatAmount(total - released)} of the agreed total was never collected into escrow and was not paid out`,
-        user.sub,
-      );
-    }
+  let payout: Row | undefined;
+  if (order.payment_rail === "escrow") {
+    try { payout = await startOrderPayout(id); }
+    catch (error) {return c.json({error: "payout_unavailable", message: error instanceof Error ? error.message : "Payout could not be started."}, 409);}
   }
 
   await touchOrder(id, { stage: "Settle", final_total: total });
@@ -1618,11 +1570,11 @@ orderRoutes.post("/orders/:id/settle", async (c) => {
   await logEvent(
     id,
     "Settle",
-    order.payment_rail === "escrow" ? `Order settled — ${formatAmount(released)} released to rider wallet` : "Order settled",
+    order.payment_rail === "escrow" ? "Order completed — mobile-money payout recorded" : "Order completed — customer paid cash",
     user.sub,
   );
 
-  return c.json({ order: await getOrder(id) });
+  return c.json({ order: await getOrder(id), payout });
 });
 
 // ---------------------------------------------------------------------------
@@ -1633,6 +1585,16 @@ const rateSchema = z.object({
   rating: z.number().int().min(1).max(5),
   comment: z.string().max(500).optional(),
   recommended: z.boolean().optional().default(false),
+});
+
+orderRoutes.post("/orders/:id/payout/retry", async (c) => {
+  const order=await getOrder(c.req.param("id"));
+  const user=c.get("user");
+  if (!order) return c.json({error:"not_found"},404);
+  if (order.rider_id !== user.sub && user.role !== "admin") return c.json({error:"forbidden"},403);
+  if (order.stage !== "Settle" || order.payment_rail !== "escrow") return c.json({error:"invalid_stage"},409);
+  try {return c.json({payout:await startOrderPayout(String(order.id))});}
+  catch (error) {return c.json({error:"payout_unavailable",message:error instanceof Error?error.message:"Payout unavailable."},409);}
 });
 
 orderRoutes.post("/orders/:id/rate", async (c) => {

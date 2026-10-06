@@ -61,6 +61,7 @@ export type {
   PaymentProviderInfo,
   PaymentCredentialFieldStatus,
   PlatformEnvironment,
+  PaymentMethod,
   AvailableJob,
   MatchingMode,
   RiderApplicant,

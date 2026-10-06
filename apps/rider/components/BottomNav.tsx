@@ -1,6 +1,6 @@
 "use client";
 
-import { Briefcase, MessageCircle, Navigation, User, Wallet } from "lucide-react";
+import { Briefcase, MessageCircle, Navigation, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -13,7 +13,6 @@ const tabs: { href: string; labelKey: TranslationKey; icon: LucideIcon }[] = [
   { href: "/", labelKey: "nav_jobs", icon: Briefcase },
   { href: "/active", labelKey: "nav_active", icon: Navigation },
   { href: "/chat", labelKey: "nav_chat", icon: MessageCircle },
-  { href: "/wallet", labelKey: "nav_wallet", icon: Wallet },
   { href: "/account", labelKey: "nav_account", icon: User },
 ];
 

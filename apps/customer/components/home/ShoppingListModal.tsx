@@ -5,6 +5,7 @@ import { List, Mic, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LocationPicker, emptyPoint, resolvePoint, type PointState } from "../LocationPicker";
+import { usePaymentOptions } from "./use-payment-options";
 import { Modal } from "../Modal";
 import { api, errorMessage } from "../../lib/api";
 import { OrderVoiceNoteRecorder } from "./OrderVoiceNoteRecorder";
@@ -28,9 +29,9 @@ export function ShoppingListModal({ onClose }: { onClose: () => void }) {
 
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   const [delivery, setDelivery] = useState<PointState>(emptyPoint);
-  const [paymentRail, setPaymentRail] = useState<"escrow" | "float">("escrow");
+  const {paymentRail, setPaymentRail, rails, settings, paymentOptionsReady, paymentOptionsError} = usePaymentOptions();
   const [voiceNote, setVoiceNote] = useState<Blob | null>(null);
-  const [deliveryFee, setDeliveryFee] = useState(0);
+  const deliveryFee = settings?.shoppingDeliveryFee ?? 0;
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,10 +40,6 @@ export function ShoppingListModal({ onClose }: { onClose: () => void }) {
     api
       .getLocations()
       .then((res) => setLocations(res.locations))
-      .catch(() => {});
-    api
-      .getSettings()
-      .then((res) => setDeliveryFee(res.settings.shoppingDeliveryFee))
       .catch(() => {});
   }, []);
 
@@ -82,6 +79,7 @@ export function ShoppingListModal({ onClose }: { onClose: () => void }) {
   }
 
   async function submit() {
+    if (!paymentOptionsReady) { setError(paymentOptionsError ?? "Payment methods are still loading. Please try again."); return; }
     const d = resolvePoint(delivery, locations);
     if (!d.area && !d.address) {
       setError("Choose a delivery location.");
@@ -248,16 +246,18 @@ export function ShoppingListModal({ onClose }: { onClose: () => void }) {
 
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Payment</p>
+            {!paymentOptionsReady && <p className="text-sm text-ink-500" role="status">{paymentOptionsError ?? "Loading payment methods…"}</p>}
             <div className="flex gap-2">
-              {(["escrow", "float"] as const).map((rail) => (
+              {rails.map((rail) => (
                 <button
                   key={rail}
+                  aria-pressed={paymentRail === rail}
                   onClick={() => setPaymentRail(rail)}
                   className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold capitalize ${
                     paymentRail === rail ? "border-gold bg-gold/10 text-ink" : "border-[var(--border-faint)] text-ink-500"
                   }`}
                 >
-                  {rail === "float" ? "Cash" : "Escrow"}
+                  {rail === "float" ? "Cash" : "Mobile money"}
                 </button>
               ))}
             </div>

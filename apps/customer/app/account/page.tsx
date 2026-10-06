@@ -1,12 +1,11 @@
 "use client";
 
 import { MATCHING_MODE_DESCRIPTIONS, MATCHING_MODE_LABELS, type MatchingMode } from "@tuma/shared";
-import { LogOut, Shield, Wallet } from "lucide-react";
+import { LogOut, Shield } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppearanceSettings } from "../../components/AppearanceSettings";
 import { ChangePasswordPanel } from "../../components/ChangePasswordPanel";
-import { LanguageSettings } from "../../components/LanguageSettings";
 import { ProfilePhoto } from "../../components/ProfilePhoto";
 import { SavedLocations } from "../../components/SavedLocations";
 import { api, errorMessage } from "../../lib/api";
@@ -87,19 +86,10 @@ export default function AccountPage() {
         </span>
       </section>
 
-      <Link
-        href="/wallet"
-        className="home-card flex items-center gap-3 !rounded-2xl !py-3 text-sm font-semibold text-ink"
-      >
-        <Wallet className="h-5 w-5 text-gold" strokeWidth={1.75} aria-hidden />
-        Wallet
-      </Link>
 
       <MatchingPreference />
 
       <AppearanceSettings />
-
-      <LanguageSettings />
 
       <ChangePasswordPanel />
 

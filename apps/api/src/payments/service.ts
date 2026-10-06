@@ -113,6 +113,7 @@ function resolveNetwork(msisdn: string): MobileMoneyNetwork {
 }
 
 type InitiateInput = {
+  providerOverride?: PaymentsProvider;
   referenceId: string;
   msisdn?: string;
   amount: number;
@@ -130,6 +131,7 @@ type InitiateInput = {
 };
 
 type InitiateResult = {
+  status?: DbPaymentStatus;
   provider: PaymentsProvider;
   providerRef: string;
   network: MobileMoneyNetwork | null;
@@ -144,7 +146,7 @@ async function initiate(
   input: InitiateInput,
   defaultNarrative: string,
 ): Promise<InitiateResult> {
-  const provider = await resolveProvider(capability, { forceMock: input.forceMock });
+  const provider = input.providerOverride ?? await resolveProvider(capability, { forceMock: input.forceMock });
   const adapter = ADAPTERS[provider];
 
   let network: MobileMoneyNetwork | null = null;
@@ -167,7 +169,7 @@ async function initiate(
     returnUrl: input.returnUrl,
   });
 
-  return { provider, providerRef: result.transactionReference, network, redirectUrl: result.redirectUrl };
+  return { provider, providerRef: result.transactionReference, network, redirectUrl: result.redirectUrl, status:toDbStatus(result.status) };
 }
 
 /** Collections: pulls funds from the customer into escrow (or a wallet top-up). */
@@ -178,6 +180,14 @@ export async function initiateCollection(input: InitiateInput): Promise<Initiate
 /** Disbursements: pays a rider out of escrow (or their wallet) at withdrawal time. */
 export async function initiateDisbursement(input: InitiateInput): Promise<InitiateResult> {
   return initiate("disbursement", input, "Tuma rider payout");
+}
+
+export async function requireAutomaticPaymentProviders(forceMock: boolean): Promise<void> {
+  if (forceMock || await getPaymentsDemoMode()) return;
+  const providers = await Promise.all([resolveProvider("collection"), resolveProvider("disbursement")]);
+  if (providers.some((provider) => provider.endsWith("_mock"))) {
+    throw new Error("Configure live mobile-money collection and payout providers in Admin before accepting mobile-money orders.");
+  }
 }
 
 export type DbPaymentStatus = "pending" | "successful" | "failed";

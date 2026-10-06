@@ -4,7 +4,7 @@ import type { OrderDetail } from "@tuma/shared";
 import { MapPin, MessageCircle, Pencil, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { CustomerAvatar } from "../../../components/CustomerAvatar";
 import { DeliveryNavigation } from "../../../components/DeliveryNavigation";
 import { FeeProposalVoicePlayer } from "../../../components/FeeProposalVoicePlayer";
@@ -33,23 +33,17 @@ export default function JobDetailPage() {
   const [feeReason, setFeeReason] = useState("");
   const [feeVoiceNote, setFeeVoiceNote] = useState<Blob | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const res = await api.getOrder(orderId);
     setDetail(res);
+    const pendingPayout = res.payments.find((payment) => payment.type === "disbursement" && payment.status === "pending" && payment.provider_ref);
+    if (pendingPayout) api.refreshPayment(pendingPayout.id).catch(() => {});
     return res;
   }, [orderId]);
 
   useLivePolling(() => void load().catch(() => {}), 4000, [load]);
 
-  useEffect(() => {
-    if (detail?.order.stage !== "Settle") return;
-    api
-      .myWallet()
-      .then((w) => setWalletBalance(w.balance))
-      .catch(() => {});
-  }, [detail?.order.stage]);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -67,6 +61,7 @@ export default function JobDetailPage() {
   if (!detail) {
     return <div className="p-4 text-sm text-ink-500">Loading job…</div>;
   }
+  const payout = [...detail.payments].reverse().find((payment) => payment.type === "disbursement");
 
   const { order, items, substitutions, feeProposals } = detail;
   const canDeliver = ["Shop", "Substitute", "Approve"].includes(order.stage);
@@ -393,7 +388,7 @@ export default function JobDetailPage() {
               </div>
 
               <div className="space-y-1 rounded-lg border border-dashed border-[var(--border-faint)] p-2.5">
-                <p className="text-xs font-semibold text-ink-500">Or record a voice reason (any language)</p>
+                <p className="text-xs font-semibold text-ink-500">Or record a voice reason</p>
                 <VoiceReasonRecorder blob={feeVoiceNote} onChange={setFeeVoiceNote} />
               </div>
 
@@ -523,25 +518,16 @@ export default function JobDetailPage() {
 
         {order.stage === "Settle" && (
           <div className="space-y-3 text-center">
+            {order.payment_rail === "escrow" && payout && <div className="space-y-2 text-sm" role="status">
+              <p>{payout.status === "successful" ? "Paid to your mobile money" : payout.status === "failed" ? "Mobile-money payout failed" : payout.provider_ref ? "Your mobile-money payout is processing" : "Your payout is awaiting provider confirmation. Contact support if it remains pending."}</p>
+              {payout.status === "failed" && <button disabled={busy} onClick={() => run(() => api.retryOrderPayout(orderId))} className="rounded-xl bg-gold px-4 py-3 font-semibold text-ink-gold">Retry mobile-money payout</button>}
+            </div>}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">You earned</p>
               <p className="text-3xl font-extrabold text-green">
                 {formatUgx(order.delivery_fee ?? order.final_total ?? order.estimated_total)}
               </p>
-              {order.type === "shopping" && order.payment_rail === "escrow" && order.delivery_fee != null && (
-                <p className="mt-1 text-xs text-ink-500">
-                  Plus{" "}
-                  {formatUgx((order.final_total ?? order.estimated_total ?? 0) - order.delivery_fee)} reimbursed
-                  for items — {formatUgx(order.final_total ?? order.estimated_total)} total settled to your
-                  wallet.
-                </p>
-              )}
             </div>
-            {walletBalance != null && (
-              <p className="text-sm text-ink-500">
-                Wallet balance: <span className="text-base font-bold text-ink">{formatUgx(walletBalance)}</span>
-              </p>
-            )}
             <Link
               href="/"
               className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-gold px-6 text-sm font-bold text-ink-gold"

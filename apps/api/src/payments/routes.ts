@@ -34,11 +34,11 @@ async function applyPaymentStatus(payment: Row, actorId: string): Promise<boolea
   if (status === "pending") return false;
 
   if (status === "failed") {
-    await db.execute({
-      sql: "UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ?",
+    const failed = await db.execute({
+      sql: "UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
       args: [payment.id as string],
     });
-    return true;
+    return failed.rowsAffected > 0;
   }
 
   // Only flip to successful from pending, so two callers racing (a poll and

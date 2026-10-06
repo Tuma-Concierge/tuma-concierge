@@ -17,6 +17,9 @@ import { checkPaymentStatus, initiateDisbursement, UnsupportedNetworkError } fro
 import { getR2Bucket, uploadResponseHeaders } from "../storage/r2.js";
 
 export const riderRoutes = new Hono();
+const walletRemoved = async (c: import("hono").Context) => c.json({error: "wallet_removed", message: "Wallets are no longer available."}, 410);
+riderRoutes.use("/riders/me/wallet", requireAuth, walletRemoved);
+riderRoutes.use("/riders/me/wallet/*", requireAuth, walletRemoved);
 
 type Row = Record<string, unknown>;
 

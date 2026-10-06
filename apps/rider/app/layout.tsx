@@ -7,7 +7,6 @@ import { OfflineBanner } from "../components/OfflineBanner";
 import { PushNotifications } from "../components/PushNotifications";
 import { ServiceWorkerRegister } from "../components/ServiceWorkerRegister";
 import { AuthProvider } from "../lib/auth-context";
-import { LanguageProvider } from "../lib/i18n";
 
 // Runs before paint so there's no flash of the wrong theme — reads the
 // user's saved choice, falling back to their OS preference.
@@ -65,10 +64,8 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <OfflineBanner />
         <AuthProvider>
-          <LanguageProvider>
             <AppShell>{children}</AppShell>
             <PushNotifications />
-          </LanguageProvider>
         </AuthProvider>
         <InstallPrompt />
       </body>

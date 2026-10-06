@@ -261,7 +261,7 @@ export function createApiClient({ baseUrl, fetchImpl, getToken, onUnauthorized }
     async cancelOrder(orderId: string) {
       return request<{ order: OrderRow }>(`/v1/orders/${orderId}/cancel`, { method: "POST" });
     },
-    async fundOrder(orderId: string, input: { msisdn?: string; useWallet?: boolean; walletOwnerId?: string } = {}) {
+    async fundOrder(orderId: string, input: { msisdn?: string } = {}) {
       return request<{
         order: OrderRow;
         payment?: { id: string; status: string; network: string | null };
@@ -269,6 +269,9 @@ export function createApiClient({ baseUrl, fetchImpl, getToken, onUnauthorized }
         funded?: boolean;
         rail?: string;
       }>(`/v1/orders/${orderId}/fund`, { method: "POST", body: JSON.stringify(input) });
+    },
+    async retryOrderPayout(orderId: string) {
+      return request(`/v1/orders/${orderId}/payout/retry`, {method:"POST"});
     },
     async proposeSubstitution(
       orderId: string,

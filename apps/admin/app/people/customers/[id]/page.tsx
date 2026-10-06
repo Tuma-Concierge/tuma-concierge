@@ -14,12 +14,10 @@ export default function CustomerDetailPage() {
   const customerId = params.id;
   const { user } = useAuth();
   const canManage = hasPermission(user?.adminRole ?? null, "customers.manage");
-  const canManagePayments = hasPermission(user?.adminRole ?? null, "payments.manage");
   const [customer, setCustomer] = useState<AdminCustomer | null>(null);
   const [orders, setOrders] = useState<AdminOrderRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refundedOrderId, setRefundedOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await api.adminGetCustomer(customerId);
@@ -44,19 +42,6 @@ export default function CustomerDetailPage() {
     }
   }
 
-  async function refundToWallet(orderId: string) {
-    setBusy(true);
-    setError(null);
-    setRefundedOrderId(null);
-    try {
-      await api.adminRefundToWallet(orderId);
-      setRefundedOrderId(orderId);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   if (!customer) {
     return <div className="p-4 text-sm text-ink-500">{error ?? "Loading customer…"}</div>;
@@ -96,19 +81,6 @@ export default function CustomerDetailPage() {
                 </span>
                 <ChevronRight className="h-5 w-5 shrink-0 text-ink-500/60" strokeWidth={1.75} aria-hidden />
               </Link>
-              {canManagePayments && order.stage !== "Create" && (
-                <div className="flex items-center gap-2 border-t border-[var(--border-faint)] pt-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => refundToWallet(order.id)}
-                    className="text-xs font-semibold text-gold disabled:opacity-60"
-                  >
-                    Refund to wallet
-                  </button>
-                  {refundedOrderId === order.id && <span className="text-xs font-semibold text-green">Refunded</span>}
-                </div>
-              )}
             </li>
           ))}
         </ul>

@@ -10,6 +10,9 @@ import { appBaseUrl } from "../verify/service.js";
 import { creditWallet, getWalletCap, resolveCustomerByIdentifier, transferWallet } from "./service.js";
 
 export const walletRoutes = new Hono();
+const walletRemoved = async (c: import("hono").Context) => c.json({error: "wallet_removed", message: "Wallets are no longer available. Pay by cash or mobile money."}, 410);
+walletRoutes.use("/wallet", requireAuth, walletRemoved);
+walletRoutes.use("/wallet/*", requireAuth, walletRemoved);
 
 type Row = Record<string, unknown>;
 

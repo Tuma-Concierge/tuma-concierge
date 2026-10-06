@@ -33,7 +33,7 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
 
 export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
   super_admin: "Full access, including staff management and the activity log.",
-  finance_manager: "Payments, escrow, rider wallets and withdrawals, payment integration health.",
+  finance_manager: "Payments, automatic mobile-money payouts, and payment integration health.",
   customer_manager: "Customer accounts, order history, and support conversations.",
   rider_manager: "Rider applications, ID verification, and rider accounts.",
   support_manager: "Cross-cutting disputes and escalated chats — read access across customers and riders.",

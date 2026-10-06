@@ -79,7 +79,7 @@ async function createPaymentLink(input: GatewayChargeInput): Promise<GatewayResu
         name: input.name,
       },
       customizations: { title: "Tuma" },
-      payment_options: "card,mobilemoneyuganda",
+      payment_options: "mobilemoneyuganda",
       meta: { narrative: input.narrative },
     }),
   });

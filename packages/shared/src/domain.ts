@@ -155,6 +155,7 @@ export const MATCHING_MODE_DESCRIPTIONS: Record<MatchingMode, string> = {
  * PATCH .../admin/platform-environment and
  * apps/api/src/lib/settings.ts's platform_environment. */
 export type PlatformEnvironment = "live" | "sandbox";
+export type PaymentMethod = "cash" | "mobile_money";
 
 /** Admin-tunable delivery pricing/matching numbers (packages/shared/src/api-client.ts: getSettings/adminUpdateSettings). */
 export type DeliverySettings = {
@@ -162,6 +163,8 @@ export type DeliverySettings = {
    * read-only here (GET /settings); change it with
    * adminSetPlatformEnvironment. */
   platformEnvironment: PlatformEnvironment;
+  paymentMethods: PaymentMethod[];
+  payoutCheckSeconds: number;
   deliveryRatePerKm: number;
   serviceRangeKm: number;
   /** Flat delivery fee (UGX) added on top of a shopping order's item costs
