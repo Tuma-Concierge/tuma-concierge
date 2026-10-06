@@ -1,33 +1,12 @@
 {
   "name": "web",
-  "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3005",
-    "build": "next build",
-    "start": "next start -p 3005",
-    "lint": "next lint",
-    "build:worker": "opennextjs-cloudflare build",
-    "preview": "opennextjs-cloudflare build && wrangler dev",
-    "deploy": "node ../../scripts/preflight-deploy.mjs && opennextjs-cloudflare build && wrangler deploy",
-    "deploy:preview": "opennextjs-cloudflare build && wrangler versions upload"
-  },
-  "dependencies": {
-    "lucide-react": "^0.468.0",
-    "next": "^15.1.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "deploy": "node ../../scripts/preflight-deploy.mjs && wrangler deploy",
+    "lint": "tsc --noEmit",
+    "build": "tsc --noEmit"
   },
   "devDependencies": {
-    "@opennextjs/cloudflare": "^1.20.6",
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "autoprefixer": "^10.4.20",
-    "eslint": "^9.17.0",
-    "eslint-config-next": "^15.1.0",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "wrangler": "^4.131.1"
   }

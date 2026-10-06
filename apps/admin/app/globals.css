@@ -70,15 +70,8 @@
     --color-navy: 90 130 196;
     --color-navy-400: 120 155 214;
     --color-navy-700: 150 180 224;
-    /* Swapped relative to their light-mode brightness order on purpose:
-       a light-mode card (white) is brighter than a light-mode muted chip
-       (226ish gray), so a selected segmented-control pill (card bg) pops
-       against its track (muted bg). Keeping the same raw values in dark
-       mode made --surface-card darker than --surface-muted, inverting
-       that relationship and making a "selected" pill look sunken instead
-       of raised. */
-    --surface-card: 40 76 122;
-    --surface-muted: 22 48 88;
+    --surface-card: 22 48 88;
+    --surface-muted: 40 76 122;
     --surface-input: 33 63 106;
     --border-faint: rgba(247, 243, 238, 0.1);
   }
@@ -100,8 +93,8 @@
   --color-navy: 90 130 196;
   --color-navy-400: 120 155 214;
   --color-navy-700: 150 180 224;
-  --surface-card: 40 76 122;
-  --surface-muted: 22 48 88;
+  --surface-card: 22 48 88;
+  --surface-muted: 40 76 122;
   --surface-input: 33 63 106;
   --border-faint: rgba(247, 243, 238, 0.1);
 }
@@ -141,24 +134,10 @@ body {
 
 /* Text-like form fields default to --surface-input instead of the browser's
    own `color-scheme: dark` fill (a flat gray unrelated to the app's
-   palette). NOTE: this selector outranks Tailwind bg-* utilities, so a bare
-   `bg-transparent` on an input does NOT work — wrap multi-part fields in
-   .field-box (below) instead. */
+   palette). A component that sets its own bg-* class (e.g. bg-transparent
+   inside a row) still wins — Tailwind's class specificity beats this. */
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
 textarea,
 select {
   background-color: rgb(var(--surface-input));
-}
-
-/* RULE — a form field is ONE solid colour, edge to edge (tabs are exempt:
-   they may use their own tinted/selected colours). Never put an input
-   of one shade inside a box of another, and never put a tinted chip/button
-   inside a field. When a field is made of several parts (icon + input +
-   button), the wrapper gets .field-box: it owns the single fill, and any
-   input/select/textarea inside it is transparent so no second tone shows. */
-.field-box {
-  background-color: rgb(var(--surface-input));
-}
-.field-box :is(input, select, textarea):not([type="checkbox"], [type="radio"]) {
-  background-color: transparent;
 }

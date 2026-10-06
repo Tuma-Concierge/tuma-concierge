@@ -8,10 +8,6 @@ export const OrderStage = {
   Approve: "Approve",
   Deliver: "Deliver",
   Arrived: "Arrived",
-  /** Ride orders only — the passenger's aboard and the rider's now
-   * heading to the destination. Goods parcels and shopping orders skip
-   * straight from Arrived to Handover. */
-  PickedUp: "PickedUp",
   Handover: "Handover",
   Settle: "Settle",
 } as const;
@@ -27,7 +23,6 @@ export const ORDER_STAGES: readonly OrderStage[] = [
   OrderStage.Approve,
   OrderStage.Deliver,
   OrderStage.Arrived,
-  OrderStage.PickedUp,
   OrderStage.Handover,
   OrderStage.Settle,
 ] as const;

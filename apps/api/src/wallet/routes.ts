@@ -5,13 +5,7 @@ import { db } from "../db/client.js";
 import { newId } from "../lib/ids.js";
 import { consume, tooManyRequests } from "../lib/ratelimit.js";
 import { getPlatformEnvironment, getWalletSettings } from "../lib/settings.js";
-import {
-  checkPaymentStatus,
-  initiateCollection,
-  paymentProviderErrorResponse,
-  paymentProviderHttpStatus,
-  UnsupportedNetworkError,
-} from "../payments/service.js";
+import { checkPaymentStatus, initiateCollection, UnsupportedNetworkError } from "../payments/service.js";
 import { appBaseUrl } from "../verify/service.js";
 import { creditWallet, getWalletCap, resolveCustomerByIdentifier, transferWallet } from "./service.js";
 
@@ -37,7 +31,7 @@ walletRoutes.get("/wallet", requireAuth, requireRole("customer"), async (c) => {
             FROM wallet_ledger wl
             LEFT JOIN users actor ON actor.id = wl.actor_id
             LEFT JOIN users cp ON cp.id = wl.counterparty_id
-            WHERE wl.user_id = ? AND wl.environment = ?
+            WHERE wl.wallet_id IS NULL AND wl.user_id = ? AND wl.environment = ?
             ORDER BY wl.created_at DESC LIMIT 50`,
       args: [user.sub, environment],
     }),
@@ -108,10 +102,7 @@ walletRoutes.post("/wallet/topup", requireAuth, requireRole("customer"), async (
       return c.json({ error: "unsupported_network", message: err.message }, 400);
     }
     console.error("Wallet top-up request failed:", err);
-    return c.json(
-      paymentProviderErrorResponse(err, "Couldn't start that top-up just now. Please try again."),
-      paymentProviderHttpStatus(err),
-    );
+    return c.json({ error: "payment_request_failed", message: "Couldn't start that top-up just now. Please try again." }, 502);
   }
 });
 
@@ -219,19 +210,12 @@ walletRoutes.post("/wallet/transfer", requireAuth, requireRole("customer"), asyn
 // out of it (see orders/routes.ts POST /orders/:id/fund's walletOwnerId).
 // ---------------------------------------------------------------------------
 
-const shareInviteSchema = z.object({
-  recipient: z.string().min(3).max(200),
-  // Which of the owner's wallets this grant applies to — omitted (or
-  // "primary") means their original wallet, matching every share created
-  // before multi-wallet support existed.
-  walletId: z.string().optional(),
-});
+const shareInviteSchema = z.object({ recipient: z.string().min(3).max(200) });
 
 walletRoutes.post("/wallet/shares", requireAuth, requireRole("customer"), async (c) => {
   const user = c.get("user");
   const parsed = shareInviteSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "invalid_body", issues: parsed.error.issues }, 400);
-  const walletId = !parsed.data.walletId || parsed.data.walletId === "primary" ? null : parsed.data.walletId;
 
   const quota = await consume(`wallet-share-invite:${user.sub}`, 10, 60 * 60);
   if (!quota.allowed) return tooManyRequests(c, quota, "Too many invites just now. Please try again later.");
@@ -243,24 +227,19 @@ walletRoutes.post("/wallet/shares", requireAuth, requireRole("customer"), async 
   if (target.id === user.sub) {
     return c.json({ error: "self_share", message: "You can't share your wallet with yourself." }, 400);
   }
-  if (walletId) {
-    const owned = await db.execute({ sql: "SELECT 1 FROM wallets WHERE id = ? AND owner_id = ?", args: [walletId, user.sub] });
-    if (owned.rows.length === 0) return c.json({ error: "not_found", message: "That wallet doesn't exist" }, 404);
-  }
 
   const existing = await db.execute({
-    sql: `SELECT id FROM wallet_shares WHERE owner_id = ? AND grantee_id = ? AND status IN ('pending', 'active')
-          AND wallet_id ${walletId ? "= ?" : "IS NULL"}`,
-    args: walletId ? [user.sub, target.id, walletId] : [user.sub, target.id],
+    sql: "SELECT id FROM wallet_shares WHERE wallet_id IS NULL AND owner_id = ? AND grantee_id = ? AND status IN ('pending', 'active')",
+    args: [user.sub, target.id],
   });
   if (existing.rows.length > 0) {
-    return c.json({ error: "already_shared", message: `You've already shared that wallet with ${target.name}.` }, 409);
+    return c.json({ error: "already_shared", message: `You've already shared your wallet with ${target.name}.` }, 409);
   }
 
   const id = newId("wsh");
   await db.execute({
-    sql: "INSERT INTO wallet_shares (id, owner_id, grantee_id, status, wallet_id) VALUES (?, ?, ?, 'pending', ?)",
-    args: [id, user.sub, target.id, walletId],
+    sql: "INSERT INTO wallet_shares (id, owner_id, grantee_id, status) VALUES (?, ?, ?, 'pending')",
+    args: [id, user.sub, target.id],
   });
   return c.json({ id, granteeName: target.name, status: "pending" }, 201);
 });
@@ -272,28 +251,19 @@ walletRoutes.post("/wallet/shares", requireAuth, requireRole("customer"), async 
  * (they haven't accepted yet); it only appears once status is "active". */
 walletRoutes.get("/wallet/shares", requireAuth, requireRole("customer"), async (c) => {
   const user = c.get("user");
-  const environment = await getPlatformEnvironment();
-  const balanceColumn = environment === "sandbox" ? "wallet_balance_sandbox" : "wallet_balance";
-  const walletColumn = environment === "sandbox" ? "balance_sandbox" : "balance";
+  const balanceColumn = (await getPlatformEnvironment()) === "sandbox" ? "wallet_balance_sandbox" : "wallet_balance";
   const [grantedRes, receivedRes] = await Promise.all([
     db.execute({
-      sql: `SELECT ws.id, ws.grantee_id, u.name as grantee_name, ws.status, ws.created_at, ws.responded_at,
-                   ws.wallet_id, COALESCE(w.name, owner.primary_wallet_name, 'Main Wallet') as wallet_name
-            FROM wallet_shares ws
-            JOIN users u ON u.id = ws.grantee_id
-            JOIN users owner ON owner.id = ws.owner_id
-            LEFT JOIN wallets w ON w.id = ws.wallet_id
-            WHERE ws.owner_id = ? ORDER BY ws.created_at DESC`,
+      sql: `SELECT ws.id, ws.grantee_id, u.name as grantee_name, ws.status, ws.created_at, ws.responded_at
+            FROM wallet_shares ws JOIN users u ON u.id = ws.grantee_id
+            WHERE ws.wallet_id IS NULL AND ws.owner_id = ? ORDER BY ws.created_at DESC`,
       args: [user.sub],
     }),
     db.execute({
       sql: `SELECT ws.id, ws.owner_id, u.name as owner_name, ws.status, ws.created_at, ws.responded_at,
-                   ws.wallet_id, COALESCE(w.name, u.primary_wallet_name, 'Main Wallet') as wallet_name,
-                   COALESCE(w.${walletColumn}, u.${balanceColumn}) as owner_balance
-            FROM wallet_shares ws
-            JOIN users u ON u.id = ws.owner_id
-            LEFT JOIN wallets w ON w.id = ws.wallet_id
-            WHERE ws.grantee_id = ? ORDER BY ws.created_at DESC`,
+                   u.${balanceColumn} as owner_balance
+            FROM wallet_shares ws JOIN users u ON u.id = ws.owner_id
+            WHERE ws.wallet_id IS NULL AND ws.grantee_id = ? ORDER BY ws.created_at DESC`,
       args: [user.sub],
     }),
   ]);

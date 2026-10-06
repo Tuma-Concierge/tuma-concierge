@@ -17,13 +17,7 @@
  */
 
 import { getCredential, isProviderConfigured } from "../credentials.js";
-import {
-  PaymentProviderError,
-  type GatewayChargeInput,
-  type GatewayResult,
-  type PaymentGatewayAdapter,
-  type PaymentProviderErrorCode,
-} from "../gateway.js";
+import type { GatewayChargeInput, GatewayResult, PaymentGatewayAdapter } from "../gateway.js";
 
 const API_BASE = "https://api.flutterwave.com/v3";
 
@@ -50,59 +44,18 @@ type CreatePaymentResponse = {
   data?: { link?: string };
 };
 
-function providerFailure(status: number, rawMessage: string | undefined): PaymentProviderError {
-  const upstreamMessage = (rawMessage ?? "Unknown Flutterwave error").replace(/\s+/g, " ").trim().slice(0, 300);
-  const normalized = upstreamMessage.toLowerCase();
-  let code: PaymentProviderErrorCode;
-  let clientMessage: string;
-
-  if (status === 401 || /unauthor|authentication|secret key|api key|invalid key/.test(normalized)) {
-    code = "payment_provider_auth_failed";
-    clientMessage = "Flutterwave rejected the saved secret key. Ask an admin to re-enter the correct Flutterwave Secret key.";
-  } else if (status === 403 || /not (enabled|activated|approved)|activate|approval|permission|live payment/.test(normalized)) {
-    code = "payment_provider_account_not_ready";
-    clientMessage =
-      "Flutterwave has not enabled this account for live payments. Check account activation and Uganda payment methods in Flutterwave.";
-  } else if (status >= 500) {
-    code = "payment_provider_unavailable";
-    clientMessage = "Flutterwave is temporarily unavailable. Please try again in a moment.";
-  } else {
-    code = "payment_provider_rejected";
-    clientMessage = "Flutterwave rejected this payment request. Check the Flutterwave payment settings and try again.";
-  }
-
-  return new PaymentProviderError("flutterwave", code, clientMessage, status, upstreamMessage);
-}
-
 async function call<T>(path: string, init: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${await secretKey()}`,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-    });
-  } catch (err) {
-    console.error("Flutterwave network request failed", { path, error: err instanceof Error ? err.message : String(err) });
-    throw new PaymentProviderError(
-      "flutterwave",
-      "payment_provider_unavailable",
-      "Flutterwave is temporarily unavailable. Please try again in a moment.",
-    );
-  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${await secretKey()}`,
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
   const body = (await res.json().catch(() => ({}))) as T & { message?: string };
   if (!res.ok) {
-    const failure = providerFailure(res.status, body.message);
-    console.error("Flutterwave API request rejected", {
-      path,
-      status: res.status,
-      upstreamMessage: failure.upstreamMessage,
-      code: failure.code,
-    });
-    throw failure;
+    throw new Error(`Flutterwave request failed: ${res.status} ${body.message ?? JSON.stringify(body)}`);
   }
   return body;
 }
@@ -122,13 +75,11 @@ async function createPaymentLink(input: GatewayChargeInput): Promise<GatewayResu
       redirect_url: input.returnUrl,
       customer: {
         email: customerEmail(input),
-        // Flutterwave Standard names this field `phonenumber` (Direct
-        // Charge uses `phone_number`; the two APIs are easy to conflate).
-        phonenumber: input.msisdn,
+        phone_number: input.msisdn,
         name: input.name,
       },
       customizations: { title: "Tuma" },
-      payment_options: "card, mobilemoneyuganda",
+      payment_options: "card,mobilemoneyuganda",
       meta: { narrative: input.narrative },
     }),
   });

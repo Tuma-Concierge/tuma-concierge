@@ -5,7 +5,7 @@ Uganda boda shopping concierge — customers post shopping lists; verified rider
 ## Stack (staging, free-tier)
 
 - **Monorepo** `xristo7/tuma-concierge`
-- **Apps:** `apps/customer`, `apps/rider`, `apps/admin`, `apps/restaurant`, `apps/merchant`, and `apps/web` (Next.js App Router → **Cloudflare Workers** via OpenNext)
+- **Apps:** `apps/customer`, `apps/rider`, `apps/admin` (Next.js App Router → **Cloudflare Workers** via OpenNext)
 - **API:** `apps/api` (Hono → **Cloudflare Worker**); `workers/api` is an unrelated legacy scaffold — leave alone
 - **DB:** Cloudflare D1 (`tuma-api`), bound natively to the API Worker. Turso backs local dev only.
 - **Shared:** `packages/shared` (`@tuma/shared`)
@@ -20,9 +20,6 @@ deploy target — see **[FRONTEND.md](./FRONTEND.md)**.
 apps/customer/   # customer web PWA
 apps/rider/      # rider web PWA
 apps/admin/      # admin dashboard (riders, customers, orders, integrations)
-apps/restaurant/ # restaurant order, payment, and wallet app
-apps/merchant/   # formal merchant onboarding, payments, wallet, outlets, and staff
-apps/web/        # public website, terms, and privacy pages
 apps/api/        # real backend (Hono, on Cloudflare Workers)
 workers/api/     # legacy CF worker scaffold — leave alone
 packages/shared/ # OrderStage, PaymentRail, API client for the real backend
@@ -34,7 +31,7 @@ infra/           # env matrix, deploy notes
 
 | Env | Services | DB |
 |-----|----------|-----|
-| staging | `tuma-api` plus customer, rider, admin, restaurant, merchant, and web Workers | D1 `tuma-api` |
+| staging | `tuma-api`, `tuma-customer`, `tuma-rider`, `tuma-admin` (Cloudflare Workers) | D1 `tuma-api` |
 | production | *blocked until Sharon OK* | *blocked* |
 
 ## Secrets

@@ -48,18 +48,3 @@ export function useThemeMode() {
 
   return { mode: mode ?? "auto", setMode };
 }
-
-/** The theme actually on screen right now ("auto" already resolved) —
- * follows data-theme on <html>, so it updates the moment the user flips
- * it in settings or "auto" crosses the day/night boundary. */
-export function useResolvedTheme(): "light" | "dark" {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  useEffect(() => {
-    const read = () => setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
-    read();
-    const observer = new MutationObserver(read);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
-  }, []);
-  return theme;
-}

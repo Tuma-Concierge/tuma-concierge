@@ -9,8 +9,7 @@
     "lint": "next lint",
     "build:worker": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && wrangler dev",
-    "deploy": "node ../../scripts/preflight-deploy.mjs && opennextjs-cloudflare build && wrangler deploy",
-    "deploy:preview": "opennextjs-cloudflare build && wrangler versions upload"
+    "deploy": "node ../../scripts/preflight-deploy.mjs && opennextjs-cloudflare build && wrangler deploy"
   },
   "dependencies": {
     "@tuma/shared": "workspace:*",

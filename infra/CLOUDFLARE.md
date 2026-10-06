@@ -1,18 +1,14 @@
 # Cloudflare (primary staging host)
 
-The active services run on Cloudflare Workers. Render config (`render.yaml`) is kept
+All three services now run on Cloudflare Workers. Render config (`render.yaml`) is kept
 for reference/rollback but is no longer the active deploy target.
 
 | Service | Type | URL |
 |---|---|---|
-| `tuma-api` | Worker (Hono) | https://api.tumaffe.online |
+| `tuma-api` | Worker (Hono) | https://tuma-api.doxalight-inc.workers.dev |
 | `tuma-customer` | Worker (Next.js via OpenNext) | https://tuma-customer.doxalight-inc.workers.dev |
 | `tuma-rider` | Worker (Next.js via OpenNext) | https://tuma-rider.doxalight-inc.workers.dev |
 | `tuma-admin` | Worker (Next.js via OpenNext) | not yet deployed — `apps/admin`, same deploy flow as customer/rider |
-| `tuma-restaurant` | Worker (Next.js via OpenNext) | `restaurant.tumaffe.online` when deployed |
-| `tuma-merchant` | Worker (Next.js via OpenNext) | `merchant.tumaffe.online` when deployed |
-| `tuma-partner` | Worker (Next.js via OpenNext) | `car.tumaffe.online` — Tuma Car app: owners and drivers (one app, Owner/Driver switch) |
-| `tuma-web` | Worker (Next.js via OpenNext) | `tumaffe.online` when deployed |
 
 **Database: Cloudflare D1** (`tuma-api`, id `26926e12-d2f4-4b40-8b1b-019f6c169e10`), bound
 natively to the `tuma-api` Worker as `env.DB` — no cross-provider HTTP hop. This is a
@@ -30,63 +26,27 @@ D1 binding is present, e.g. under plain `pnpm dev`) — see `TURSO_DATABASE_URL`
   the build step (`opennextjs-cloudflare build`) works fine on older Node.
 - `wrangler` authenticated (`wrangler login` or an API token in `CLOUDFLARE_API_TOKEN`).
 
-## Automated CI/CD (GitHub Actions)
-
-Deployments are automated through `.github/workflows/deploy.yml`:
-
-- **Branch Push (Preview):** Any push to a non-`main` branch automatically deploys changed apps to **Cloudflare Preview** via `wrangler versions upload --preview-alias <branch-alias>`.
-- **Short Preview Subdomains on tumaffe.online:**
-  - **Central Preview Hub:** `https://preview.tumaffe.online` (dashboard listing all branches and 1-click launch chips for all apps)
-  - **Short Path Router:** `https://preview.tumaffe.online/<branch-or-alias>/<app>` (e.g. `https://preview.tumaffe.online/feat-orders/customer`)
-  - **Direct App Subdomains:**
-    - Customer Web: `https://customer-preview.tumaffe.online`
-    - Rider Web: `https://rider-preview.tumaffe.online`
-    - Merchant Web: `https://merchant-preview.tumaffe.online`
-    - Tuma Car Web: `https://partner-preview.tumaffe.online`
-    - Restaurant Web: `https://restaurant-preview.tumaffe.online`
-    - Admin Dashboard: `https://admin-preview.tumaffe.online`
-    - Marketing / Web: `https://web-preview.tumaffe.online`
-    - API Service: `https://api-preview.tumaffe.online`
-  - *(Optionally pass `?b=<branch>` to view a specific branch preview on any app subdomain)*
-  - **Full Worker URL:** `https://<branch-alias>-tuma-<app>.doxalight-inc.workers.dev`
-- **Main Merge (Live):** Any push/merge to `main` automatically deploys changed apps to **Cloudflare Live** (production domains and live `workers.dev`) using `pnpm run deploy` (with `scripts/preflight-deploy.mjs` verification).
-- **Required GitHub Secrets:**
-  - `CLOUDFLARE_API_TOKEN` (API token with *Edit Cloudflare Workers* / *Account > Workers Scripts > Edit* permissions)
-  - `CLOUDFLARE_ACCOUNT_ID` (Cloudflare account ID)
-
-### Manual / Local Deploy Commands
-
-Live deployments are accepted only from a clean local `main` at the exact same
-commit as `origin/main`. See `COLLABORATION.md` for the Claude Code/Codex
-branch and handoff workflow.
+## Deploy
 
 ```bash
-# Live Deployments (from main only)
+# API (Hono → Worker)
 pnpm --filter api deploy          # wrangler deploy
+
+# Customer / Rider / Admin (Next.js → Worker via OpenNext)
 pnpm --filter customer deploy     # opennextjs-cloudflare build && wrangler deploy
 pnpm --filter rider deploy
-pnpm --filter admin deploy
-pnpm --filter restaurant deploy
-pnpm --filter merchant deploy
-pnpm --filter web deploy
-
-# Preview Uploads (from any branch)
-pnpm --filter api deploy:preview
-pnpm --filter customer deploy:preview
-pnpm --filter rider deploy:preview
-pnpm --filter admin deploy:preview
-pnpm --filter restaurant deploy:preview
-pnpm --filter merchant deploy:preview
-pnpm --filter web deploy:preview
+pnpm --filter admin deploy        # not yet deployed — creates the tuma-admin Worker on first run
 ```
+
+`autoDeploy`-style CI isn't wired up yet — deploys are manual (`wrangler deploy`) until a
+GitHub Actions workflow is added.
 
 ## Config
 
 - `apps/api/wrangler.jsonc` — `d1_databases` binding (`DB` → `tuma-api`), `vars` for CORS
   origins and MoMo sandbox settings. Secrets (`JWT_SECRET`, MoMo credentials) are set via
   `wrangler secret put <NAME>` — never committed, never put in `vars`.
-- Frontend `wrangler.jsonc` files under `apps/customer`, `apps/rider`, `apps/admin`,
-  `apps/restaurant`, `apps/merchant`, and `apps/web` —
+- `apps/customer/wrangler.jsonc`, `apps/rider/wrangler.jsonc`, `apps/admin/wrangler.jsonc` —
   static assets binding + `NEXT_PRIVATE_MINIMAL_MODE=1` (see gotcha below).
   `NEXT_PUBLIC_API_URL` is baked in at **build** time via `.env.production` in each app
   (safe to commit — it's a public value).

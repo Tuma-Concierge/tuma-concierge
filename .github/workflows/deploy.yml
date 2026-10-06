@@ -140,7 +140,7 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: |
           echo "🔍 Deploying ${{ matrix.app }} to Cloudflare PREVIEW (alias: $ALIAS)..."
-          if [ "${{ matrix.app }}" != "api" ] && [ "${{ matrix.app }}" != "preview-hub" ]; then
+          if [ "${{ matrix.app }}" = "customer" ] || [ "${{ matrix.app }}" = "rider" ] || [ "${{ matrix.app }}" = "admin" ]; then
             npx opennextjs-cloudflare build
           fi
 

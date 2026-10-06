@@ -1,35 +1,17 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { mobileNumberRoutes } from "./account/mobile-numbers.js";
 import { adminRoutes } from "./admin/routes.js";
-import { callRoutes } from "./calls/routes.js";
-import { carRoutes } from "./car/routes.js";
-import { carpoolRoutes } from "./car/carpool.js";
-import { dealRoutes } from "./car/deals.js";
-import { selfDriveRoutes } from "./car/selfdrive.js";
-import { carAdminRoutes } from "./car/admin-routes.js";
 import { authRoutes } from "./auth/routes.js";
 import { locationRoutes } from "./locations/routes.js";
-import { passengerRoutes } from "./passengers/routes.js";
-import { aiKeyRoutes } from "./speech/ai-keys-routes.js";
-import { tripRoutes } from "./passengers/trips.js";
-import { merchantRoutes } from "./merchants/routes.js";
 import { orderRoutes } from "./orders/routes.js";
 import { paymentRoutes } from "./payments/routes.js";
 import { pushRoutes } from "./push/routes.js";
-import { restaurantChatRoutes } from "./restaurants/chat.js";
-import { customerRestaurantRoutes } from "./restaurants/customer.js";
-import { menuRoutes } from "./restaurants/menu.js";
-import { restaurantRoutes } from "./restaurants/routes.js";
 import { riderRoutes } from "./riders/routes.js";
 import { settingsRoutes } from "./settings/routes.js";
-import { speechRoutes } from "./speech/routes.js";
-import { stageAdminRoutes, stageRoutes } from "./stages/routes.js";
 import { userRoutes } from "./users/routes.js";
 import { verifyRoutes } from "./verify/routes.js";
 import { voiceRoutes } from "./voice/routes.js";
 import { walletRoutes } from "./wallet/routes.js";
-import { walletsRoutes } from "./wallet/wallets.js";
 
 /** Hono app shared by the Node entry (local dev) and the Cloudflare Worker entry. */
 const app = new Hono();
@@ -38,9 +20,6 @@ const devOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:3002", // apps/admin dev server
-  "http://localhost:3003", // apps/restaurant dev server
-  "http://localhost:3005", // apps/merchant dev server
-  "http://localhost:3006", // apps/partner dev server
 ];
 
 const defaultOrigins = ["https://tuma-customer-staging.onrender.com", "https://tuma-rider-staging.onrender.com"];
@@ -64,15 +43,7 @@ app.use("*", (c, next) => {
   const allowOrigins = isDev ? [...new Set([...base, ...devOrigins])] : base.filter((o) => !isLocalhost(o));
 
   return cors({
-    origin: (origin) => {
-      if (!origin) return undefined;
-      if (allowOrigins.includes(origin)) return origin;
-      // Allow any Cloudflare preview or staging/production domain on doxalight-inc.workers.dev or tumaffe.online
-      if (/^https:\/\/([a-zA-Z0-9-]+\.)*(doxalight-inc\.workers\.dev|tumaffe\.online)$/i.test(origin)) {
-        return origin;
-      }
-      return undefined;
-    },
+    origin: allowOrigins,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
   })(c, next);
@@ -168,7 +139,6 @@ app.get("/v1", (c) =>
       "GET /v1/admin/riders/:userId/id-document",
       "POST /v1/admin/riders/:userId/verify",
       "GET /v1/admin/stats",
-      "GET /v1/admin/stats/orders",
       "GET /v1/admin/integrations",
       "GET /v1/admin/customers",
       "GET /v1/admin/customers/:id",
@@ -186,10 +156,6 @@ app.get("/v1", (c) =>
       "GET /v1/locations",
       "POST /v1/locations",
       "DELETE /v1/locations/:id",
-      "GET /v1/passengers",
-      "POST /v1/passengers",
-      "DELETE /v1/passengers/:id",
-      "GET /v1/trips/:token",
       "GET /v1/settings",
       "PUT /v1/admin/settings",
       "POST /v1/voice/transcribe",
@@ -199,35 +165,14 @@ app.get("/v1", (c) =>
 
 app.route("/v1/auth", authRoutes);
 app.route("/v1/auth", verifyRoutes);
-// Public (token-gated) trip page for rides booked for someone else — mounted
-// before the authenticated /v1 routers on purpose.
-app.route("/v1/trips", tripRoutes);
 app.route("/v1", orderRoutes);
 app.route("/v1", paymentRoutes);
 app.route("/v1", pushRoutes);
 app.route("/v1", riderRoutes);
-app.route("/v1", restaurantRoutes);
-app.route("/v1", menuRoutes);
-app.route("/v1", customerRestaurantRoutes);
-app.route("/v1", restaurantChatRoutes);
 app.route("/v1", userRoutes);
 app.route("/v1", locationRoutes);
-app.route("/v1", passengerRoutes);
-app.route("/v1", aiKeyRoutes);
-app.route("/v1", mobileNumberRoutes);
-app.route("/v1", callRoutes);
 app.route("/v1", settingsRoutes);
-app.route("/v1", speechRoutes);
 app.route("/v1", walletRoutes);
-app.route("/v1", carRoutes);
-app.route("/v1", carpoolRoutes);
-app.route("/v1", dealRoutes);
-app.route("/v1", selfDriveRoutes);
-app.route("/v1", carAdminRoutes);
-app.route("/v1", walletsRoutes);
-app.route("/v1", stageRoutes);
-app.route("/v1", stageAdminRoutes);
-app.route("/v1", merchantRoutes);
 // adminRoutes' admin gate is scoped to /admin/* (see admin/routes.ts), so
 // mount order here is no longer load-bearing — it used to be registered as
 // "*" on this shared /v1 router, which meant anything mounted after it

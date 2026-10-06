@@ -5,7 +5,6 @@ import { User } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import { useTranslate } from "../../lib/i18n";
 
 function formatTime(iso: string): string {
   const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
@@ -46,7 +45,6 @@ function ThreadAvatar({ counterpartId, hasPhoto }: { counterpartId: string; hasP
 }
 
 export default function ChatListPage() {
-  const t = useTranslate();
   const [threads, setThreads] = useState<ChatThread[] | null>(null);
 
   useEffect(() => {
@@ -65,21 +63,21 @@ export default function ChatListPage() {
   }, []);
 
   if (threads === null) {
-    return <div className="p-4 text-sm text-ink-500">{t("chat_loading")}</div>;
+    return <div className="p-4 text-sm text-ink-500">Loading…</div>;
   }
 
   if (threads.length === 0) {
     return (
       <div className="flex min-h-[70dvh] flex-col items-center justify-center space-y-2 p-4 text-center">
-        <h1 className="text-xl font-bold text-ink">{t("chat_title")}</h1>
-        <p className="text-sm text-ink-500">{t("chat_empty")}</p>
+        <h1 className="text-xl font-bold text-ink">Chat</h1>
+        <p className="text-sm text-ink-500">No conversations yet — they&apos;ll show up here once you take a job.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-3 px-4 pb-6 pt-4">
-      <h1 className="text-xl font-bold text-ink">{t("chat_title")}</h1>
+      <h1 className="text-xl font-bold text-ink">Chat</h1>
       <ul className="space-y-2">
         {threads.map((t) => (
           <li key={t.counterpartId}>

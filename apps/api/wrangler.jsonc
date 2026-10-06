@@ -21,12 +21,7 @@
   "ai": {
     "binding": "AI"
   },
-  // Daily at 03:00 UTC — sweeps recurring rider subscribers whose
-  // paid-through date has passed and attempts to renew them. See
-  // src/worker.ts's scheduled() and src/riders/subscription.ts.
-  "triggers": {
-    "crons": ["*/2 * * * *", "0 3 * * *"]
-  },
+  "triggers": { "crons": [] },
   "migrations": [
     // The in-app call feature (PR #6) was previously deployed to this
     // Worker directly, ahead of this branch's own history, then dropped

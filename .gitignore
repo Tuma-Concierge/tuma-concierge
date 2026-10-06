@@ -13,7 +13,6 @@ out
 
 # build output
 dist
-.audit
 
 # env
 .env

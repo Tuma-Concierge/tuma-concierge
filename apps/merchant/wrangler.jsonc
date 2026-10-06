@@ -1,10 +1,15 @@
 {
   "name": "tuma-merchant",
-  "main": ".open-next/worker.js",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-09-12",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
-  "routes": [{ "pattern": "merchant.tumaffe.online", "custom_domain": true }],
-  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
-  "vars": { "NEXT_PRIVATE_MINIMAL_MODE": "1" }
+  "routes": [
+    {
+      "pattern": "merchant.tumaffe.online",
+      "custom_domain": true
+    }
+  ]
 }

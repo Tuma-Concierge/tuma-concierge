@@ -1,26 +1,18 @@
 "use client";
 
-import type { OrderDetail, OrderRating } from "@tuma/shared";
-import { MapPin, MessageCircle, TriangleAlert, User } from "lucide-react";
+import type { MobileMoneyNetwork, OrderDetail, OrderRating, RiderApplicant, WalletShareReceived } from "@tuma/shared";
+import { detectMobileMoneyNetwork, mobileMoneyNetworkLabel } from "@tuma/shared";
+import { MapPin, MessageCircle, Star, ThumbsUp, TriangleAlert, User } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BottomDrawer } from "../../../components/BottomDrawer";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FeeProposalVoicePlayer } from "../../../components/FeeProposalVoicePlayer";
-import { LiveTrackingMap } from "../../../components/LiveTrackingMap";
-import { Modal } from "../../../components/Modal";
 import { OrderTimeline } from "../../../components/OrderTimeline";
 import { RateDeliveryCard } from "../../../components/RateDeliveryCard";
-import { ApplicantPicker } from "../../../components/ApplicantPicker";
-import { SwipeToConfirm } from "../../../components/SwipeToConfirm";
 import { VoiceNotePlayer } from "../../../components/VoiceNotePlayer";
 import { api, errorMessage } from "../../../lib/api";
-import { CarRideNotice } from "../../../components/CarRideNotice";
-import { PassengerCard } from "../../../components/PassengerCard";
-import { markFeeProposalSeen } from "../../../lib/fee-proposal-seen";
-import { useTranslate } from "../../../lib/i18n";
 import { formatDateTime, formatDuration, formatUgx, orderTitle, stageLabel } from "../../../lib/order-display";
-import { useFreshness } from "../../../lib/use-freshness";
 import { useLivePolling } from "../../../lib/use-live-polling";
+import { useNetworkStatus } from "../../../lib/use-network-status";
 
 /** Photo + name of the rider handling this order, and (once settled) when it was delivered and how long it took. */
 function RiderSummaryCard({
@@ -36,7 +28,6 @@ function RiderSummaryCard({
   createdAt: string;
   settledAt: string;
 }) {
-  const t = useTranslate();
   const router = useRouter();
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
@@ -68,13 +59,13 @@ function RiderSummaryCard({
         </span>
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-bold text-ink">{riderName ?? t("order_your_rider")}</span>
+        <span className="block truncate text-[15px] font-bold text-ink">{riderName ?? "Your rider"}</span>
         {settled ? (
           <span className="block text-xs text-ink-500">
-            {t("order_delivered_took", { when: formatDateTime(settledAt), duration: formatDuration(createdAt, settledAt) })}
+            Delivered {formatDateTime(settledAt)} · Took {formatDuration(createdAt, settledAt)}
           </span>
         ) : (
-          <span className="block text-xs text-ink-500">{t("order_your_rider")}</span>
+          <span className="block text-xs text-ink-500">Your rider</span>
         )}
       </span>
       <button
@@ -83,67 +74,124 @@ function RiderSummaryCard({
         className="flex shrink-0 items-center gap-1.5 rounded-full bg-[rgb(var(--surface-muted))] px-3 py-2 text-xs font-bold text-ink"
       >
         <MessageCircle className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-        {t("order_chat")}
+        Chat
       </button>
     </section>
   );
 }
 
-export default function OrderDetailPage() {
-  const t = useTranslate();
-  const params = useParams<{ id: string }>();
-  const orderId = params.id;
-  const router = useRouter();
-  const [detail, setDetail] = useState<OrderDetail | null>(null);
-  const [busy, setBusy] = useState(false);
+/** For a "customer_selects" order still unmatched — each applicant's distance and track record, and a pick button. */
+function ApplicantPicker({ orderId, onSelected }: { orderId: string; onSelected: () => void }) {
+  const [applicants, setApplicants] = useState<RiderApplicant[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [cancelConfirm, setCancelConfirm] = useState<"cancel" | "delete" | null>(null);
-  const [waitingNoticeOpen, setWaitingNoticeOpen] = useState(false);
-  const [waitingNoticeSeenKey, setWaitingNoticeSeenKey] = useState<string | null>(null);
-  const { markUpdated, label: staleLabel } = useFreshness();
-  const matching = useRef(false);
 
-  async function cancelThisOrder() {
-    setBusy(true);
+  const load = useCallback(() => {
+    api
+      .getApplicants(orderId)
+      .then((res) => setApplicants(res.applicants))
+      .catch(() => {});
+  }, [orderId]);
+
+  useLivePolling(load, 4000, [load]);
+
+  async function choose(riderId: string) {
+    setBusyId(riderId);
     setError(null);
     try {
-      await api.customerCancelOrder(orderId, detail?.timeFees?.cancellationDue ?? 0);
-      setCancelConfirm(null);
-      await load();
+      await api.selectApplicant(orderId, riderId);
+      onSelected();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
-  async function deleteThisOrder() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.customerDeleteOrder(orderId);
-      router.push("/orders");
-    } catch (err) {
-      setError(errorMessage(err));
-      setBusy(false);
-    }
+  if (applicants.length === 0) {
+    return (
+      <div className="flex items-center gap-3 py-2">
+        <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-gold border-t-transparent" />
+        <p className="text-sm text-ink-500">Waiting for riders to offer…</p>
+      </div>
+    );
   }
+
+  return (
+    <div className="space-y-2.5">
+      <p className="text-sm font-semibold text-ink">Choose your rider</p>
+      {applicants.map((a) => (
+        <div key={a.riderId} className="space-y-1.5 rounded-xl border border-[var(--border-faint)] p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-ink">{a.riderName}</span>
+            {a.distanceKm != null && <span className="text-xs text-ink-500">{a.distanceKm} km away</span>}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-ink-500">
+            {a.avgRating != null && (
+              <span className="flex items-center gap-1">
+                <Star className="h-3.5 w-3.5 fill-gold text-gold" strokeWidth={1.5} aria-hidden />
+                {a.avgRating} ({a.reviewCount})
+              </span>
+            )}
+            {a.recommendCount > 0 && (
+              <span className="flex items-center gap-1 text-green">
+                <ThumbsUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                {a.recommendCount} recommend{a.recommendCount === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+          {a.outOfServiceRange && <p className="text-xs text-gold">Outside normal range — may cost a bit more.</p>}
+          {a.recentComments.length > 0 && (
+            <p className="text-xs italic text-ink-500">&ldquo;{a.recentComments[0]}&rdquo;</p>
+          )}
+          <button
+            type="button"
+            onClick={() => choose(a.riderId)}
+            disabled={busyId === a.riderId}
+            className="min-h-9 w-full rounded-full bg-gold px-3 text-xs font-bold text-ink-gold disabled:opacity-60"
+          >
+            {busyId === a.riderId ? "Choosing…" : "Choose this rider"}
+          </button>
+        </div>
+      ))}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+export default function OrderDetailPage() {
+  const params = useParams<{ id: string }>();
+  const orderId = params.id;
+  const [detail, setDetail] = useState<OrderDetail | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [msisdn, setMsisdn] = useState("");
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [sharedWallets, setSharedWallets] = useState<WalletShareReceived[]>([]);
+  const online = useNetworkStatus();
+  const detectedNetwork = useMemo(() => detectMobileMoneyNetwork(msisdn), [msisdn]);
+  const matching = useRef(false);
+
+  useEffect(() => {
+    api
+      .getWallet()
+      .then((w) => setWalletBalance(w.balance))
+      .catch(() => {});
+    api
+      .getWalletShares()
+      .then((s) => setSharedWallets(s.received.filter((r) => r.status === "active")))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     const res = await api.getOrder(orderId);
     setDetail(res);
-    markUpdated();
-    // Opening the order counts as "seen" for the home screen's reminder
-    // card even if the customer doesn't act on it here — see
-    // lib/fee-proposal-seen.
-    const pendingProposal = res.feeProposals.find((f) => f.status === "pending");
-    if (pendingProposal) markFeeProposalSeen(pendingProposal.id);
     const pending = res.payments.find((p) => p.status === "pending");
     if (pending) {
       api.refreshPayment(pending.id).catch(() => {});
     }
     return res;
-  }, [orderId, markUpdated]);
+  }, [orderId]);
 
   useLivePolling(() => void load().catch(() => {}), 4000, [load]);
 
@@ -186,13 +234,6 @@ export default function OrderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, stage, riderId]);
 
-  // Rethrows on failure — several call sites pass these straight to
-  // SwipeToConfirm's onConfirm, which only shows its confirmed checkmark
-  // once the promise it's given actually resolves. Swallowing the error
-  // here (only setting `error` state) would let that control show a false
-  // "success" on a failed payment or handover. Fire-and-forget callers
-  // (plain onClick handlers, not awaited) must swallow it themselves with
-  // `.catch(() => {})` — the error is already surfaced via `error` state.
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
@@ -201,31 +242,36 @@ export default function OrderDetailPage() {
       await load();
     } catch (err) {
       setError(errorMessage(err));
-      throw err;
     } finally {
       setBusy(false);
     }
   }
 
-  const timeFees = detail?.timeFees;
-  const waitingEndsAtMs = timeFees?.waitingEndsAt ? Date.parse(timeFees.waitingEndsAt) : NaN;
-  const waitingApproaching =
-    Number.isFinite(waitingEndsAtMs) &&
-    detail?.order.stage === "Arrived" &&
-    timeFees?.waitingDue === 0 &&
-    Date.now() >= waitingEndsAtMs - (timeFees.waitingWarningMinutes ?? 2) * 60_000;
-  const waitingMinutesLeft = waitingApproaching && Number.isFinite(waitingEndsAtMs)
-    ? Math.max(1, Math.ceil((waitingEndsAtMs - Date.now()) / 60_000))
-    : 0;
-  useEffect(() => {
-    const noticeKey = timeFees?.waitingEndsAt ?? null;
-    if (!noticeKey || (!waitingApproaching && timeFees?.waitingDue === 0) || waitingNoticeSeenKey === noticeKey) return;
-    setWaitingNoticeSeenKey(noticeKey);
-    setWaitingNoticeOpen(true);
-  }, [timeFees?.waitingEndsAt, timeFees?.waitingDue, waitingApproaching, waitingNoticeSeenKey]);
+  async function doFund(useWallet = false, walletOwnerId?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const input =
+        detail?.order.payment_rail === "escrow"
+          ? useWallet
+            ? { useWallet: true, walletOwnerId }
+            : { msisdn }
+          : {};
+      const res = await api.fundOrder(orderId, input);
+      if (res.redirectUrl) {
+        window.location.href = res.redirectUrl;
+        return;
+      }
+      await load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!detail) {
-    return <div className="p-4 text-sm text-ink-500">{t("order_loading")}</div>;
+    return <div className="p-4 text-sm text-ink-500">Loading order…</div>;
   }
 
   const { order, items, substitutions, feeProposals } = detail;
@@ -258,113 +304,29 @@ export default function OrderDetailPage() {
     setDetail((prev) => (prev ? { ...prev, rating: newRating } : prev));
   }
 
-  // Nothing has happened yet — no rider assigned, which also means no
-  // money's been collected (funding only ever follows a match). Once
-  // that's no longer true, backing out affects someone else's day and
-  // goes through the API's own "cannot_cancel"/"cannot_delete" refusal
-  // (surfaced via the normal error banner) rather than a button here.
-  const canCancel = timeFees?.canCancel ?? (!order.rider_id && ["Create", "Match"].includes(order.stage));
-  const canDelete = !order.rider_id && ["Create", "Match"].includes(order.stage);
-
   return (
     <div className="space-y-6 px-4 pb-24 pt-4">
       <header className="space-y-1">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-xl font-bold text-ink">{orderTitle(order)}</h1>
-          {canCancel && (
-            <div className="flex shrink-0 gap-2">
-              <button
-                type="button"
-                onClick={() => setCancelConfirm("cancel")}
-                className="rounded-full border border-[var(--border-faint)] px-3 py-1.5 text-xs font-bold text-ink-500"
-              >
-                {t("order_cancel")}
-              </button>
-              {canDelete && (
-                <button
-                  type="button"
-                  onClick={() => setCancelConfirm("delete")}
-                  className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600"
-                >
-                  {t("order_delete")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <p className={`flex items-center gap-1.5 text-sm font-semibold ${order.stage === "Cancelled" ? "text-red-600" : "text-green"}`}>
-          {stageLabel(order.stage, order.type, !!order.is_ride)}
-          {staleLabel && (
-            <span className="rounded-full bg-[rgb(var(--surface-muted))] px-2 py-0.5 text-[11px] font-medium text-ink-500">
-              {t("order_updated")} {staleLabel}
-            </span>
-          )}
-        </p>
-        {order.stage === "Cancelled" && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{t("order_cancelled_note")}</p>
-        )}
-        {!!order.is_ride && order.stage !== "Cancelled" && (
-          <CarRideNotice orderId={orderId} stage={order.stage} hasDriver={!!order.rider_id} onChanged={() => void load().catch(() => {})} />
-        )}
-        {!!order.is_ride && order.passenger_name && order.stage !== "Cancelled" && (
-          <PassengerCard name={order.passenger_name} phone={order.passenger_phone ?? null} shareToken={order.share_token ?? null} />
-        )}
+        <h1 className="text-xl font-bold text-ink">{orderTitle(order)}</h1>
+        <p className="text-sm font-semibold text-green">{stageLabel(order.stage, order.type)}</p>
         {order.type === "parcel" && order.pickup_area && (
           <p className="flex items-center gap-1.5 text-sm text-ink-500">
             <MapPin className="h-3.5 w-3.5 text-ink-500" strokeWidth={2} aria-hidden />
-            {order.is_ride ? t("order_pickup_point") : t("order_pickup")}
-            {order.pickup_area}
+            Pickup: {order.pickup_area}
             {order.pickup_address ? ` · ${order.pickup_address}` : ""}
           </p>
         )}
         {order.destination_area && (
           <p className="flex items-center gap-1.5 text-sm text-ink-500">
             <MapPin className="h-3.5 w-3.5 text-ink-500" strokeWidth={2} aria-hidden />
-            {order.type === "parcel" ? (order.is_ride ? t("order_destination") : t("order_deliver_to")) : ""}
+            {order.type === "parcel" ? "Deliver to: " : ""}
             {order.destination_area}
             {order.destination_address ? ` · ${order.destination_address}` : ""}
           </p>
         )}
       </header>
 
-      {pendingFeeProposal && (
-        <section className="home-card space-y-2 !border-l-4 !border-l-gold">
-          <p className="text-sm text-ink">
-            {t("order_fee_suggests")}{" "}
-            <strong>{formatUgx(pendingFeeProposal.proposed_total - currentItemsTotal)}</strong>{" "}
-            <span className="text-ink-500">
-              ({t("order_fee_was")} {formatUgx(order.delivery_fee ?? 0)})
-            </span>
-            <span className="block text-ink-500">{t("order_items_unaffected")}</span>
-            {pendingFeeProposal.reason && <span className="block text-ink-500">{pendingFeeProposal.reason}</span>}
-          </p>
-          {pendingFeeProposal.reason_voice_key && (
-            <FeeProposalVoicePlayer orderId={orderId} proposalId={pendingFeeProposal.id} />
-          )}
-          <div className="flex gap-2">
-            <button
-              disabled={busy}
-              onClick={() => run(() => api.decideFeeProposal(orderId, pendingFeeProposal.id, true)).catch(() => {})}
-              className="flex-1 rounded-full bg-green px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
-            >
-              {t("order_accept")}
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => run(() => api.decideFeeProposal(orderId, pendingFeeProposal.id, false)).catch(() => {})}
-              className="flex-1 rounded-full bg-[rgb(var(--surface-muted))] px-3 py-2 text-xs font-bold text-ink disabled:opacity-60"
-            >
-              {t("order_reject")}
-            </button>
-          </div>
-        </section>
-      )}
-
       <OrderTimeline order={order} events={detail.events} statusLabel={stageLabel(order.stage, order.type)} />
-
-      {order.rider_id && !["Settle", "Handover"].includes(order.stage) && (
-        <LiveTrackingMap order={order} events={detail.events} />
-      )}
 
       {order.rider_id && (
         <RiderSummaryCard
@@ -381,15 +343,49 @@ export default function OrderDetailPage() {
       {!!order.matched_out_of_range && order.rider_id && (
         <div className="flex items-start gap-2 rounded-xl border border-gold bg-gold/10 p-3">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold" strokeWidth={2.25} aria-hidden />
-          <p className="text-sm text-ink">{t("order_out_of_range_note")}</p>
+          <p className="text-sm text-ink">
+            Your rider is available but currently outside the normal service area, so this delivery may cost
+            a little more than usual.
+          </p>
         </div>
+      )}
+
+      {pendingFeeProposal && (
+        <section className="home-card space-y-2 !border-l-4 !border-l-gold">
+          <p className="text-sm text-ink">
+            Your rider suggests a new delivery fee:{" "}
+            <strong>{formatUgx(pendingFeeProposal.proposed_total - currentItemsTotal)}</strong>{" "}
+            <span className="text-ink-500">(was {formatUgx(order.delivery_fee ?? 0)})</span>
+            <span className="block text-ink-500">Items cost is unaffected.</span>
+            {pendingFeeProposal.reason && <span className="block text-ink-500">{pendingFeeProposal.reason}</span>}
+          </p>
+          {pendingFeeProposal.reason_voice_key && (
+            <FeeProposalVoicePlayer orderId={orderId} proposalId={pendingFeeProposal.id} />
+          )}
+          <div className="flex gap-2">
+            <button
+              disabled={busy}
+              onClick={() => run(() => api.decideFeeProposal(orderId, pendingFeeProposal.id, true))}
+              className="flex-1 rounded-full bg-green px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+            >
+              Accept
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => run(() => api.decideFeeProposal(orderId, pendingFeeProposal.id, false))}
+              className="flex-1 rounded-full bg-[rgb(var(--surface-muted))] px-3 py-2 text-xs font-bold text-ink disabled:opacity-60"
+            >
+              Reject
+            </button>
+          </div>
+        </section>
       )}
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {order.type === "shopping" && (
         <section className="home-card space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">{t("order_items_heading")}</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">Items</h2>
           <ul className="space-y-1.5">
             {items.map((item) => (
               <li key={item.id} className="flex items-center justify-between text-sm text-ink">
@@ -397,10 +393,7 @@ export default function OrderDetailPage() {
                   <span className="block">
                     {item.quantity}× {item.name}
                     {item.unit_price != null && (
-                      <span className="text-ink-500">
-                        {" "}
-                        · {t("order_est_each")} {formatUgx(item.unit_price)} {t("order_each")}
-                      </span>
+                      <span className="text-ink-500"> · Est. {formatUgx(item.unit_price)} each</span>
                     )}
                   </span>
                   {item.note && <span className="block text-xs text-ink-500">{item.note}</span>}
@@ -413,11 +406,11 @@ export default function OrderDetailPage() {
           </ul>
           <div className="space-y-1 border-t border-[var(--border-faint)] pt-2 text-sm font-semibold">
             <div className="flex justify-between">
-              <span>{t("order_items_total")}</span>
+              <span>Items total</span>
               <span>{formatUgx((order.final_total ?? order.estimated_total ?? 0) - (order.delivery_fee ?? 0))}</span>
             </div>
             <div className="flex justify-between text-ink-500">
-              <span>{t("order_delivery_fee")}</span>
+              <span>Delivery fee</span>
               <span>{formatUgx(order.delivery_fee ?? 0)}</span>
             </div>
           </div>
@@ -426,7 +419,7 @@ export default function OrderDetailPage() {
 
       {order.type === "parcel" && (
         <section className="home-card flex justify-between text-sm font-semibold">
-          <span>{order.is_ride ? t("order_fare") : t("order_delivery_fee")}</span>
+          <span>Delivery fee</span>
           <span>{formatUgx(order.delivery_fee ?? order.final_total ?? order.estimated_total)}</span>
         </section>
       )}
@@ -439,14 +432,94 @@ export default function OrderDetailPage() {
             !order.rider_id && (
               <div className="flex items-center gap-3 py-2">
                 <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-gold border-t-transparent" />
-                <p className="text-sm text-ink-500">{t("order_finding_rider")}</p>
+                <p className="text-sm text-ink-500">Finding a nearby verified rider…</p>
               </div>
             )
           )}
 
-          <button type="button" onClick={() => router.push(`/orders/${orderId}/pay`)} className="min-h-12 w-full rounded-full bg-gold px-4 text-base font-bold text-ink-gold">
-            {pendingPayment ? "Check payment" : "Continue to payment"}
-          </button>
+          {order.rider_id && pendingPayment && (
+            <div className="flex items-center gap-3 py-2">
+              <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-gold border-t-transparent" />
+              <p className="text-sm text-ink-500">
+                Confirming your {mobileMoneyNetworkLabel((pendingPayment?.network as MobileMoneyNetwork | undefined) ?? null)} payment…
+              </p>
+            </div>
+          )}
+
+          {order.rider_id && !pendingPayment && (
+            <>
+              <p className="text-sm text-ink-500">A rider is ready. Pay to send your {order.type === "parcel" ? "parcel" : "list"}.</p>
+              {!online && (
+                <p className="rounded-lg bg-gold/10 px-3 py-2 text-xs font-semibold text-ink-500">
+                  You&apos;re offline — paying needs a connection. Reconnect to continue.
+                </p>
+              )}
+              {order.payment_rail === "escrow" ? (
+                <div className="space-y-2">
+                  {walletBalance != null && walletBalance >= (order.final_total ?? order.estimated_total ?? 0) && (
+                    <button
+                      type="button"
+                      onClick={() => doFund(true)}
+                      disabled={busy || !online}
+                      className="min-h-12 w-full rounded-full border-2 border-gold px-4 text-base font-bold text-ink disabled:opacity-60"
+                    >
+                      Pay from wallet ({formatUgx(walletBalance)} available)
+                    </button>
+                  )}
+                  {sharedWallets
+                    .filter((w) => w.owner_balance != null && w.owner_balance >= (order.final_total ?? order.estimated_total ?? 0))
+                    .map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => doFund(true, w.owner_id)}
+                        disabled={busy || !online}
+                        className="min-h-12 w-full rounded-full border-2 border-gold px-4 text-base font-bold text-ink disabled:opacity-60"
+                      >
+                        Pay from {w.owner_name}&apos;s wallet ({formatUgx(w.owner_balance ?? 0)} available)
+                      </button>
+                    ))}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      doFund(false);
+                    }}
+                    className="space-y-2"
+                  >
+                    <div className="space-y-1">
+                      <input
+                        required
+                        value={msisdn}
+                        onChange={(e) => setMsisdn(e.target.value)}
+                        placeholder="Mobile money number (e.g. 0772345678)"
+                        className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
+                      />
+                      {detectedNetwork && (
+                        <p className="px-1 text-xs font-semibold text-ink-500">
+                          {mobileMoneyNetworkLabel(detectedNetwork)} detected
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={busy || !online}
+                      className="min-h-12 w-full rounded-full bg-gold px-4 text-base font-bold text-ink-gold shadow-[0_4px_12px_rgba(201,162,39,0.35)] disabled:opacity-60"
+                    >
+                      Pay via {mobileMoneyNetworkLabel(detectedNetwork)}
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <button
+                  onClick={() => doFund()}
+                  disabled={busy || !online}
+                  className="min-h-12 w-full rounded-full bg-gold px-4 text-base font-bold text-ink-gold shadow-[0_4px_12px_rgba(201,162,39,0.35)] disabled:opacity-60"
+                >
+                  Confirm — rider fronts the cash
+                </button>
+              )}
+            </>
+          )}
         </section>
       )}
 
@@ -455,11 +528,7 @@ export default function OrderDetailPage() {
         {(order.stage === "Shop" || order.stage === "Substitute") && (
           <>
             <p className="text-sm text-ink-500">
-              {order.is_ride
-                ? t("order_rider_ready_ride")
-                : order.type === "parcel"
-                  ? t("order_rider_picking_up")
-                  : t("order_rider_shopping")}
+              {order.type === "parcel" ? "Your rider is picking up the parcel." : "Your rider is shopping."}
             </p>
             {pendingGroups.length > 0 && (
               <ul className="space-y-2">
@@ -468,7 +537,7 @@ export default function OrderDetailPage() {
                   return (
                     <li key={group.key} className="rounded-xl border border-[var(--border-faint)] p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("order_rider_proposed_change")}
+                        Your rider proposed a change
                       </p>
                       <ul className="mt-1.5 space-y-1">
                         {group.subs.map((sub) => (
@@ -486,24 +555,24 @@ export default function OrderDetailPage() {
                       </ul>
                       {group.subs.length > 1 && (
                         <p className="mt-1.5 text-sm font-semibold text-ink">
-                          {t("order_net_change")} {netDelta >= 0 ? "+" : ""}
+                          Net change: {netDelta >= 0 ? "+" : ""}
                           {formatUgx(netDelta)}
                         </p>
                       )}
                       <div className="mt-2 flex gap-2">
                         <button
                           disabled={busy}
-                          onClick={() => run(() => decideGroup(group, true)).catch(() => {})}
+                          onClick={() => run(() => decideGroup(group, true))}
                           className="flex-1 rounded-full bg-green px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
                         >
-                          {t("order_approve")}
+                          Approve
                         </button>
                         <button
                           disabled={busy}
-                          onClick={() => run(() => decideGroup(group, false)).catch(() => {})}
+                          onClick={() => run(() => decideGroup(group, false))}
                           className="flex-1 rounded-full bg-[rgb(var(--surface-muted))] px-3 py-2 text-xs font-bold text-ink disabled:opacity-60"
                         >
-                          {t("order_reject")}
+                          Reject
                         </button>
                       </div>
                     </li>
@@ -514,52 +583,34 @@ export default function OrderDetailPage() {
           </>
         )}
 
-        {order.stage === "Approve" && <p className="text-sm text-ink-500">{t("order_waiting_start_delivery")}</p>}
+        {order.stage === "Approve" && <p className="text-sm text-ink-500">Waiting for your rider to start delivery.</p>}
 
-        {!!order.is_ride && order.stage === "Deliver" && (
-          <p className="text-sm text-ink-500">
-            {t("order_heading_to_pickup")}
-            {order.eta_minutes ? ` — ~${order.eta_minutes} min` : ""}.
-          </p>
-        )}
-
-        {!!order.is_ride && order.stage === "Arrived" && (
-          <p className="text-sm text-ink-500">{t("order_rider_here")}</p>
-        )}
-
-        {(!order.is_ride
-          ? order.stage === "Deliver" || order.stage === "Arrived"
-          : order.stage === "PickedUp") && (
+        {(order.stage === "Deliver" || order.stage === "Arrived") && (
           <>
             <p className="text-sm text-ink-500">
-              {order.is_ride
-                ? t("order_on_way_destination")
-                : order.stage === "Arrived"
-                  ? t("order_rider_arrived")
-                  : `${t("order_rider_on_way")}${order.eta_minutes ? ` — ~${order.eta_minutes} min` : ""}.`}
+              {order.stage === "Arrived"
+                ? "Your rider has arrived!"
+                : `Your rider is on the way${order.eta_minutes ? ` — ~${order.eta_minutes} min` : ""}.`}
             </p>
             {order.pin_code && (
               <div className="rounded-xl bg-gold/10 p-3 text-center">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  {order.is_ride ? t("order_trip_pin") : t("order_handover_pin")}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Handover PIN</p>
                 <p className="text-2xl font-bold tracking-[0.3em] text-ink">{order.pin_code}</p>
               </div>
             )}
-            <div className="pt-2">
-              <SwipeToConfirm
-                label={order.is_ride ? t("order_slide_complete_trip") : t("order_slide_confirm_received")}
-                confirmedLabel={t("order_handover_confirmed")}
-                onConfirm={() => run(() => api.handoverOrder(orderId, order.pin_code as string))}
-                disabled={busy}
-              />
-            </div>
+            <button
+              disabled={busy}
+              onClick={() => run(() => api.handoverOrder(orderId, order.pin_code as string))}
+              className="min-h-11 w-full rounded-full bg-gold px-4 text-sm font-bold text-ink-gold disabled:opacity-60"
+            >
+              Confirm I received my {order.type === "parcel" ? "parcel" : "order"}
+            </button>
           </>
         )}
 
         {order.stage === "Handover" && (
           <p className="text-sm text-ink-500">
-            {order.is_ride ? t("order_trip_confirmed_note") : t("order_handover_confirmed_note")}
+            Handover confirmed — thanks! Your rider will close out the order to complete payment.
           </p>
         )}
 
@@ -567,57 +618,6 @@ export default function OrderDetailPage() {
           <RateDeliveryCard orderId={orderId} rating={detail.rating} onRated={handleRated} />
         )}
       </section>
-      )}
-
-      <BottomDrawer
-        isOpen={cancelConfirm !== null}
-        onClose={() => setCancelConfirm(null)}
-        title={cancelConfirm === "delete" ? t("order_delete_title") : t("order_cancel_title")}
-      >
-        <p className="text-sm text-ink-500">
-          {cancelConfirm === "delete"
-            ? t("order_delete_note")
-            : timeFees?.cancellationDue
-              ? `Your rider has already started the journey. Cancelling now will charge ${formatUgx(timeFees.cancellationDue)} from your main wallet. If your wallet is empty, it will show as money owed and your next top-up will clear it.`
-              : t("order_cancel_note")}
-        </p>
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setCancelConfirm(null)}
-            disabled={busy}
-            className="min-h-11 flex-1 rounded-full border border-[var(--border-faint)] px-4 text-sm font-bold text-ink disabled:opacity-60"
-          >
-            {t("order_never_mind")}
-          </button>
-          <button
-            type="button"
-            onClick={cancelConfirm === "delete" ? deleteThisOrder : cancelThisOrder}
-            disabled={busy}
-            className="min-h-11 flex-1 rounded-full bg-red-600 px-4 text-sm font-bold text-white disabled:opacity-60"
-          >
-            {busy ? t("order_working") : cancelConfirm === "delete" ? t("order_delete_order") : t("order_cancel_order")}
-          </button>
-        </div>
-      </BottomDrawer>
-      {waitingNoticeOpen && timeFees && (
-        <Modal title="Waiting fee notice" onClose={() => setWaitingNoticeOpen(false)}>
-          <div className="space-y-4">
-            <p className="text-sm leading-6 text-ink-500">
-              {timeFees.waitingDue > 0
-                ? `Your rider has waited beyond the free time. A waiting fee of ${formatUgx(timeFees.waitingDue)} will be charged from your main wallet when this stop is completed.`
-                : `Your rider has arrived. You have about ${waitingMinutesLeft} minute${waitingMinutesLeft === 1 ? "" : "s"} left before the waiting fee applies.`}
-            </p>
-            <button
-              type="button"
-              onClick={() => setWaitingNoticeOpen(false)}
-              className="min-h-11 w-full rounded-full bg-gold px-4 text-sm font-bold text-ink"
-            >
-              Okay
-            </button>
-          </div>
-        </Modal>
       )}
     </div>
   );

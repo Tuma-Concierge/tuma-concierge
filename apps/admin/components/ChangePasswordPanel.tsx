@@ -101,7 +101,7 @@ export function ChangePasswordPanel({ onDone }: { onDone?: () => void } = {}) {
         />
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {saved && <p className="text-sm font-medium text-green">Password changed.</p>}
 
       <button

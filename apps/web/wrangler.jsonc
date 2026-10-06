@@ -1,19 +1,19 @@
 {
   "name": "tuma-web",
-  "main": ".open-next/worker.js",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-09-12",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "routes": [
-    { "pattern": "tumaffe.online", "custom_domain": true },
-    { "pattern": "www.tumaffe.online/*", "zone_name": "tumaffe.online" }
-  ],
-  "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
-  },
-  "vars": {
-    // See apps/customer/wrangler.jsonc for why this is needed.
-    "NEXT_PRIVATE_MINIMAL_MODE": "1"
-  }
+    {
+      "pattern": "tumaffe.online",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.tumaffe.online/*",
+      "zone_name": "tumaffe.online"
+    }
+  ]
 }

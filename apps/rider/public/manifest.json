@@ -1,6 +1,6 @@
 {
-  "name": "Tuma Rider",
-  "short_name": "Tuma Rider",
+  "name": "Tuma Driver",
+  "short_name": "Tuma Driver",
   "description": "Accept jobs, navigate, and get paid — the Tuma rider app.",
   "start_url": "/",
   "scope": "/",

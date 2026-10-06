@@ -1,7 +1,7 @@
 "use client";
 
 import { hasPermission } from "@tuma/shared";
-import { LayoutGrid, Package, Users } from "lucide-react";
+import { LayoutGrid, Package, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -11,18 +11,19 @@ type Tab = { href: string; label: string; icon: LucideIcon };
 
 const ALL_TABS: Tab[] = [
   { href: "/", label: "Overview", icon: LayoutGrid },
-  { href: "/people", label: "Users", icon: Users },
+  { href: "/people", label: "People", icon: Users },
   { href: "/orders", label: "Orders", icon: Package },
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/account", label: "Account", icon: User },
 ];
 
 /** Backend enforcement is what actually matters (see requirePermission on
  * every /admin/* route) — this only avoids showing a staff member a tab
- * that would just 403 the moment they tap it. Settings and Account moved
- * to the drawer menu (see NavDrawer) to keep this bar to the three most
- * frequently used destinations. */
+ * that would just 403 the moment they tap it. */
 function visibleTabs(role: Parameters<typeof hasPermission>[0]): Tab[] {
   return ALL_TABS.filter((tab) => {
     if (tab.href === "/people") return hasPermission(role, "customers.view") || hasPermission(role, "riders.view");
+    if (tab.href === "/settings") return hasPermission(role, "settings.view");
     return true;
   });
 }

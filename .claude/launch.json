@@ -18,18 +18,6 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "pnpm@9.15.0", "--filter", "admin", "dev"],
       "port": 3002
-    },
-    {
-      "name": "restaurant",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "pnpm@9.15.0", "--filter", "restaurant", "dev"],
-      "port": 3003
-    },
-    {
-      "name": "web",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "pnpm@9.15.0", "--filter", "web", "dev"],
-      "port": 3005
     }
   ]
 }

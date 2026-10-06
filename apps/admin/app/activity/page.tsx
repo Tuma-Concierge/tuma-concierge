@@ -127,7 +127,7 @@ export default function ActivityLogPage() {
     <div className="space-y-5 px-4 pb-6 pt-4">
       <h1 className="text-xl font-bold text-ink">Activity log</h1>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {entries === null ? (
         <p className="text-sm text-ink-500">Loading…</p>

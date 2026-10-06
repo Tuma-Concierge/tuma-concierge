@@ -46,7 +46,7 @@ function resolveViewEnvironment(c: { req: { query(name: string): string | undefi
 
 adminRoutes.get("/admin/stats", requirePermission("stats.view"), async (c) => {
   const environment = resolveViewEnvironment(c, await getPlatformEnvironment());
-  const [users, riders, restaurants, ordersByStage, paymentsByStatus, settled] = await Promise.all([
+  const [users, riders, ordersByStage, paymentsByStatus, settled] = await Promise.all([
     db.execute(
       `SELECT role, COUNT(*) as n FROM users WHERE role IN ('customer', 'rider') GROUP BY role`,
     ),
@@ -56,7 +56,6 @@ adminRoutes.get("/admin/stats", requirePermission("stats.view"), async (c) => {
          SUM(CASE WHEN is_online = 1 THEN 1 ELSE 0 END) as online
        FROM riders`,
     ),
-    db.execute(`SELECT COUNT(*) as n FROM restaurants`),
     db.execute({ sql: `SELECT stage, COUNT(*) as n FROM orders WHERE environment = ? GROUP BY stage`, args: [environment] }),
     db.execute({
       sql: `SELECT p.status, COUNT(*) as n FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.environment = ? GROUP BY p.status`,
@@ -86,81 +85,12 @@ adminRoutes.get("/admin/stats", requirePermission("stats.view"), async (c) => {
     stats: {
       totalCustomers: usersByRole.customer ?? 0,
       totalRiders: usersByRole.rider ?? 0,
-      totalRestaurants: Number((restaurants.rows[0] as Row)?.n ?? 0),
       verifiedRiders: Number(riderCounts.verified ?? 0),
       onlineRiders: Number(riderCounts.online ?? 0),
       ordersByStage: stageCounts,
       paymentsByStatus: paymentCounts,
       settledGmv: Number((settled.rows[0] as Row)?.total ?? 0),
     },
-  });
-});
-
-type OverviewRange = "today" | "week" | "month" | "all";
-
-function overviewRangeStartIso(range: OverviewRange): string | null {
-  const now = new Date();
-  if (range === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  if (range === "week") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  if (range === "month") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  return null;
-}
-
-const ORDER_MODULES = ["parcel", "shopping", "ride", "food"] as const;
-
-/**
- * Orders and platform take broken down by module (parcel / shopping / ride
- * / food) and by order-value vs profit, for the Overview dashboard. Profit
- * is the sum of the fee-breakdown columns locked in at Fund time (see
- * order_fees / apps/api/src/orders/routes.ts POST /orders/:id/fund) — cash
- * (float-rail) orders don't get an order_fees row since their platform cut
- * is deducted from the rider's wallet at Settle instead, so cash-order
- * profit isn't reflected here yet.
- */
-adminRoutes.get("/admin/stats/orders", requirePermission("stats.view"), async (c) => {
-  const environment = resolveViewEnvironment(c, await getPlatformEnvironment());
-  const range = (c.req.query("range") as OverviewRange) ?? "all";
-  const since = overviewRangeStartIso(range);
-
-  const res = await db.execute({
-    sql: `SELECT
-            CASE
-              WHEN o.restaurant_id IS NOT NULL THEN 'food'
-              WHEN o.is_ride = 1 THEN 'ride'
-              WHEN o.type = 'shopping' THEN 'shopping'
-              ELSE 'parcel'
-            END as module,
-            COUNT(*) as order_count,
-            COALESCE(SUM(o.final_total), 0) as revenue,
-            COALESCE(SUM(
-              COALESCE(f.service_fee, 0) + COALESCE(f.processing_fee_customer, 0) +
-              COALESCE(f.processing_fee_rider, 0) + COALESCE(f.delivery_commission, 0)
-            ), 0) as profit
-          FROM orders o
-          LEFT JOIN order_fees f ON f.order_id = o.id
-          WHERE o.environment = ?${since ? " AND o.created_at >= ?" : ""}
-          GROUP BY module`,
-    args: since ? [environment, since] : [environment],
-  });
-
-  const modules: Record<string, { orderCount: number; revenue: number; profit: number }> = {};
-  for (const m of ORDER_MODULES) modules[m] = { orderCount: 0, revenue: 0, profit: 0 };
-  let totalOrderCount = 0;
-  let totalRevenue = 0;
-  let totalProfit = 0;
-  for (const row of res.rows as Row[]) {
-    const key = row.module as string;
-    const entry = { orderCount: Number(row.order_count), revenue: Number(row.revenue), profit: Number(row.profit) };
-    modules[key] = entry;
-    totalOrderCount += entry.orderCount;
-    totalRevenue += entry.revenue;
-    totalProfit += entry.profit;
-  }
-
-  return c.json({
-    range,
-    totals: { orderCount: totalOrderCount, revenue: totalRevenue, profit: totalProfit },
-    modules,
   });
 });
 
@@ -196,26 +126,20 @@ adminRoutes.get("/admin/integrations", requirePermission("integrations.view"), a
 adminRoutes.get("/admin/customers", requirePermission("customers.view"), async (c) => {
   const q = c.req.query("q")?.trim();
   const environment = resolveViewEnvironment(c, await getPlatformEnvironment());
-  // City has no dedicated column on a customer account — approximated from
-  // their most recent order's pickup point, the closest thing to "where
-  // this customer actually is" that already exists in the schema.
-  const citySubquery = `(SELECT o.pickup_area FROM orders o WHERE o.customer_id = u.id AND o.environment = ? ORDER BY o.created_at DESC LIMIT 1) as city`;
   const res = await db.execute(
     q
       ? {
           sql: `SELECT u.id, u.name, u.phone, u.email, u.status, u.created_at,
-                  (SELECT COUNT(*) FROM orders WHERE customer_id = u.id AND environment = ?) as order_count,
-                  ${citySubquery}
+                  (SELECT COUNT(*) FROM orders WHERE customer_id = u.id AND environment = ?) as order_count
                 FROM users u WHERE u.role = 'customer' AND (u.name LIKE ? OR u.phone LIKE ?)
                 ORDER BY u.created_at DESC LIMIT 100`,
-          args: [environment, environment, `%${q}%`, `%${q}%`],
+          args: [environment, `%${q}%`, `%${q}%`],
         }
       : {
           sql: `SELECT u.id, u.name, u.phone, u.email, u.status, u.created_at,
-             (SELECT COUNT(*) FROM orders WHERE customer_id = u.id AND environment = ?) as order_count,
-             ${citySubquery}
+             (SELECT COUNT(*) FROM orders WHERE customer_id = u.id AND environment = ?) as order_count
            FROM users u WHERE u.role = 'customer' ORDER BY u.created_at DESC LIMIT 100`,
-          args: [environment, environment],
+          args: [environment],
         },
   );
   return c.json({ customers: res.rows });

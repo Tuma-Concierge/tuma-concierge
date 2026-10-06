@@ -74,7 +74,7 @@ export function InstallPrompt() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-ink">Install Tuma Rider</p>
+          <p className="text-sm font-bold text-ink">Install Tuma Driver</p>
           <p className="truncate text-xs text-ink-500">
             {iosHint ? 'Tap Share, then "Add to Home Screen"' : "Add to your home screen for quick access"}
           </p>

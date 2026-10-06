@@ -1,31 +1,10 @@
 "use client";
 
-import type { AdminStats, FailedPayment, IntegrationsStatus, OrderModuleKey, OrderOverview, OrderOverviewRange } from "@tuma/shared";
-import { AlertTriangle, CheckCircle2, Package, ShoppingBag, Store, Truck, XCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { AdminStats, FailedPayment, IntegrationsStatus } from "@tuma/shared";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/api";
 import { formatUgx, formatDate } from "../lib/order-display";
-
-const RANGE_LABEL: Record<OrderOverviewRange, string> = {
-  today: "Today",
-  week: "This week",
-  month: "This month",
-  all: "All time",
-};
-
-const MODULE_LABEL: Record<OrderModuleKey, string> = {
-  parcel: "Parcels",
-  shopping: "Shopping",
-  ride: "Rides",
-  food: "Food",
-};
-
-const MODULE_ICON: Record<OrderModuleKey, typeof Package> = {
-  parcel: Package,
-  shopping: ShoppingBag,
-  ride: Truck,
-  food: Store,
-};
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
@@ -33,109 +12,6 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-ink">{value}</p>
     </div>
-  );
-}
-
-function OrdersByModule() {
-  const [range, setRange] = useState<OrderOverviewRange>("all");
-  const [view, setView] = useState<"revenue" | "profit">("revenue");
-  const [overview, setOverview] = useState<OrderOverview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .adminOrderOverview(range)
-      .then(setOverview)
-      .catch((err) => setError(errorMessage(err)));
-  }, [range]);
-
-  const modules = useMemo(() => {
-    if (!overview) return [];
-    return (Object.keys(MODULE_LABEL) as OrderModuleKey[])
-      .map((key) => ({ key, ...overview.modules[key] }))
-      .sort((a, b) => b[view] - a[view]);
-  }, [overview, view]);
-
-  return (
-    <section className="home-card space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">Orders</h2>
-        <div className="flex rounded-full bg-[rgb(var(--surface-muted))] p-0.5">
-          {(["revenue", "profit"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                view === v ? "bg-[rgb(var(--surface-card))] text-ink shadow-sm" : "text-ink-500"
-              }`}
-            >
-              {v === "revenue" ? "Revenue" : "Income"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-1.5 overflow-x-auto">
-        {(Object.keys(RANGE_LABEL) as OrderOverviewRange[]).map((r) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => setRange(r)}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
-              range === r ? "bg-ink text-white" : "bg-[rgb(var(--surface-muted))] text-ink-500"
-            }`}
-          >
-            {RANGE_LABEL[r]}
-          </button>
-        ))}
-      </div>
-
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
-
-      {overview && (
-        <>
-          <div className="grid grid-cols-2 gap-3 border-y border-[var(--border-faint)] py-3">
-            <div>
-              <p className="text-xs text-ink-500">Total orders</p>
-              <p className="text-xl font-bold text-ink">{overview.totals.orderCount}</p>
-            </div>
-            <div>
-              <p className="text-xs text-ink-500">{view === "revenue" ? "Order value" : "Platform income"}</p>
-              <p className="text-xl font-bold text-ink">{formatUgx(overview.totals[view])}</p>
-            </div>
-          </div>
-
-          <ul className="space-y-2">
-            {modules.map((m) => {
-              const Icon = MODULE_ICON[m.key];
-              const shareOfTotal = overview.totals[view] > 0 ? (m[view] / overview.totals[view]) * 100 : 0;
-              return (
-                <li key={m.key} className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4 shrink-0 text-gold" strokeWidth={1.75} aria-hidden />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{MODULE_LABEL[m.key]}</span>
-                    <span className="text-xs text-ink-500">{m.orderCount} order{m.orderCount === 1 ? "" : "s"}</span>
-                    <span className="w-24 text-right text-sm font-bold text-ink">{formatUgx(m[view])}</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-[rgb(var(--surface-muted))]">
-                    <div className="h-1.5 rounded-full bg-gold" style={{ width: `${Math.min(100, shareOfTotal)}%` }} />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-
-          {view === "profit" && (
-            <p className="text-[11px] text-ink-500">
-              Cash orders&apos; platform cut is deducted from the rider&apos;s wallet at settle rather than tracked
-              per order, so it isn&apos;t reflected in income here yet. This is gross income, not pure profit —
-              it doesn&apos;t yet account for costs like payment processing or payouts.
-            </p>
-          )}
-        </>
-      )}
-    </section>
   );
 }
 
@@ -162,7 +38,7 @@ export default function OverviewPage() {
   }, [load]);
 
   if (error) {
-    return <p className="m-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>;
+    return <p className="m-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
   }
   if (!stats || !integrations) {
     return <div className="p-4 text-sm text-ink-500">Loading…</div>;
@@ -198,16 +74,14 @@ export default function OverviewPage() {
         </section>
       )}
 
-      <section className="grid grid-cols-3 gap-3">
+      <section className="grid grid-cols-2 gap-3">
         <StatCard label="Customers" value={stats.totalCustomers} />
         <StatCard label="Riders" value={stats.totalRiders} />
-        <StatCard label="Restaurants" value={stats.totalRestaurants} />
         <StatCard label="Verified riders" value={stats.verifiedRiders} />
         <StatCard label="Online now" value={stats.onlineRiders} />
         <StatCard label="Active orders" value={activeOrders} />
+        <StatCard label="Settled GMV" value={formatUgx(stats.settledGmv)} />
       </section>
-
-      <OrdersByModule />
 
       <section className="home-card space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">Payments</h2>
@@ -222,10 +96,6 @@ export default function OverviewPage() {
         <div className="flex items-center justify-between text-sm">
           <span className="text-ink-500">Failed</span>
           <span className="font-semibold text-red-700">{stats.paymentsByStatus.failed ?? 0}</span>
-        </div>
-        <div className="flex items-center justify-between border-t border-[var(--border-faint)] pt-2 text-sm">
-          <span className="text-ink-500">Settled GMV (all time)</span>
-          <span className="font-semibold text-ink">{formatUgx(stats.settledGmv)}</span>
         </div>
       </section>
 
