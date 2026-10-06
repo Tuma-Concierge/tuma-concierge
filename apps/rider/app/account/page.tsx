@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppearanceSettings } from "../../components/AppearanceSettings";
 import { ChangePasswordPanel } from "../../components/ChangePasswordPanel";
-import { LanguageSettings } from "../../components/LanguageSettings";
 import { api, errorMessage } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
 import { compressImage } from "../../lib/image-compress";
@@ -230,8 +229,6 @@ export default function AccountPage() {
       </section>
 
       <AppearanceSettings />
-
-      <LanguageSettings />
 
       <ChangePasswordPanel />
 

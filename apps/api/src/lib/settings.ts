@@ -12,6 +12,8 @@ const DEFAULTS = {
    * doesn't delete or move anything — it just changes which environment's
    * rows every read/write path in the app targets. */
   platform_environment: "live",
+  payments_enabled_methods: '["cash"]',
+  payout_check_seconds: "120",
   delivery_rate_per_km: "1000",
   service_range_km: "7",
   /** Flat delivery fee (UGX) charged on top of a shopping order's item
@@ -66,6 +68,21 @@ const DEFAULTS = {
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;
+
+export type PaymentMethod = "cash" | "mobile_money";
+export async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
+  if (!methods.length || methods.some((method) => method !== "cash" && method !== "mobile_money")) {
+    throw new Error("Keep at least one valid payment method active");
+  }
+  await setSetting("payments_enabled_methods", JSON.stringify([...new Set(methods)]));
+}
+export async function getPaymentMethods(): Promise<PaymentMethod[]> {
+  try {
+    const value: unknown = JSON.parse(await getSetting("payments_enabled_methods"));
+    const methods = Array.isArray(value) ? [...new Set(value.filter((m): m is PaymentMethod => m === "cash" || m === "mobile_money"))] : [];
+    return methods.length ? methods : ["cash"];
+  } catch { return ["cash"]; }
+}
 
 export async function getSetting(key: SettingKey): Promise<string> {
   const res = await db.execute({ sql: "SELECT value FROM settings WHERE key = ?", args: [key] });

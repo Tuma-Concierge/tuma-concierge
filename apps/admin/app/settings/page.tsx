@@ -5,11 +5,12 @@ import {
   MATCHING_MODE_DESCRIPTIONS,
   MATCHING_MODE_LABELS,
   type MatchingMode,
+  type PaymentMethod,
   type PaymentCredentialFieldStatus,
   type PaymentProviderIdentity,
   type PaymentProviderInfo,
 } from "@tuma/shared";
-import { CreditCard, Mic, Route, Settings as SettingsIcon, Wallet as WalletIcon } from "lucide-react";
+import { CreditCard, Mic, Route, Settings as SettingsIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
@@ -28,10 +29,9 @@ export default function SettingsPage() {
   const [maxAssignmentMinutes, setMaxAssignmentMinutes] = useState("");
   const [activeProviders, setActiveProviders] = useState<PaymentProviderIdentity[]>(["yo"]);
   const [paymentsDemoMode, setPaymentsDemoMode] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(["cash"]);
+  const [payoutCheckSeconds, setPayoutCheckSeconds] = useState("120");
   const [providerInfo, setProviderInfo] = useState<PaymentProviderInfo[]>([]);
-  const [walletUnverifiedCap, setWalletUnverifiedCap] = useState("");
-  const [walletVerifiedCap, setWalletVerifiedCap] = useState("");
-  const [walletMaxTopup, setWalletMaxTopup] = useState("");
   const [voiceNoteMaxSeconds, setVoiceNoteMaxSeconds] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -55,10 +55,9 @@ export default function SettingsPage() {
         setMaxAssignmentMinutes(String(settingsRes.settings.maxAssignmentMinutes));
         setActiveProviders(settingsRes.settings.paymentsActiveProviders);
         setPaymentsDemoMode(settingsRes.settings.paymentsDemoMode);
+        setPaymentMethods(settingsRes.settings.paymentMethods);
+        setPayoutCheckSeconds(String(settingsRes.settings.payoutCheckSeconds));
         setPlatformEnvironment(settingsRes.settings.platformEnvironment);
-        setWalletUnverifiedCap(String(settingsRes.settings.walletUnverifiedCap));
-        setWalletVerifiedCap(String(settingsRes.settings.walletVerifiedCap));
-        setWalletMaxTopup(String(settingsRes.settings.walletMaxTopup));
         setVoiceNoteMaxSeconds(String(settingsRes.settings.voiceNoteMaxSeconds));
         setProviderInfo(integrationsRes.integrations.mobileMoney.providers);
       })
@@ -102,9 +101,8 @@ export default function SettingsPage() {
           ? {
               paymentsActiveProviders: activeProviders.length > 0 ? activeProviders : (["yo"] as PaymentProviderIdentity[]),
               paymentsDemoMode,
-              walletUnverifiedCap: Number(walletUnverifiedCap),
-              walletVerifiedCap: Number(walletVerifiedCap),
-              walletMaxTopup: Number(walletMaxTopup),
+              paymentMethods,
+              payoutCheckSeconds:Number(payoutCheckSeconds),
             }
           : {}),
       });
@@ -116,9 +114,8 @@ export default function SettingsPage() {
       setMaxAssignmentMinutes(String(res.settings.maxAssignmentMinutes));
       setActiveProviders(res.settings.paymentsActiveProviders);
       setPaymentsDemoMode(res.settings.paymentsDemoMode);
-      setWalletUnverifiedCap(String(res.settings.walletUnverifiedCap));
-      setWalletVerifiedCap(String(res.settings.walletVerifiedCap));
-      setWalletMaxTopup(String(res.settings.walletMaxTopup));
+      setPaymentMethods(res.settings.paymentMethods);
+      setPayoutCheckSeconds(String(res.settings.payoutCheckSeconds));
       setVoiceNoteMaxSeconds(String(res.settings.voiceNoteMaxSeconds));
       if (canManagePayments) await refreshIntegrations();
       setSaved(true);
@@ -137,6 +134,27 @@ export default function SettingsPage() {
         <p className="text-sm text-ink-500">Loading…</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-5">
+          <section className="home-card space-y-3">
+            <h2 className="text-sm font-semibold text-ink">Payment methods</h2>
+            <p className="text-sm text-ink-500">Cash is selected by default when available. Keep at least one method active.</p>
+            {(["cash", "mobile_money"] as const).map((method) => {
+              const checked = paymentMethods.includes(method);
+              const lastActive = checked && paymentMethods.length === 1;
+              return <label key={method} className="flex min-h-12 items-center justify-between gap-3">
+                <span>{method === "cash" ? "Cash" : "Mobile money"}{lastActive && <span className="ml-2 text-xs text-ink-500">At least one must stay active</span>}</span>
+                <input type="checkbox" checked={checked} disabled={!canManagePayments || lastActive || busy}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setPaymentMethods((current) => enabled ? [...new Set([...current, method])] : current.length > 1 ? current.filter((m) => m !== method) : current);
+                  }} />
+              </label>;
+            })}
+            {paymentMethods.includes("mobile_money") && <label className="block space-y-1 text-sm">
+              <span>Payout status check interval (seconds)</span>
+              <input type="number" min={60} max={3600} value={payoutCheckSeconds} disabled={!canManagePayments}
+                onChange={(event) => setPayoutCheckSeconds(event.target.value)} className="w-full rounded-xl px-3 py-2.5" />
+            </label>}
+          </section>
           <section className="home-card space-y-3">
             <h2 className="text-sm font-semibold text-ink">Platform data</h2>
             <p className="text-sm text-ink-500">Live and sandbox orders and balances stay separate. Switching does not delete data.</p>
@@ -301,56 +319,6 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="home-card space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold">
-                <WalletIcon className="h-4.5 w-4.5" strokeWidth={1.75} aria-hidden />
-              </span>
-              <h2 className="text-sm font-semibold text-ink">Customer wallet limits</h2>
-            </div>
-            <p className="text-xs text-ink-500">
-              Closed-loop store credit — customers top up and spend it on orders, no cash-out. Balance is capped
-              by verification, the same way mobile money limits unverified accounts.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-ink-500" htmlFor="walletUnverified">
-                  Unverified cap (UGX)
-                </label>
-                <input
-                  id="walletUnverified"
-                  inputMode="numeric"
-                  value={walletUnverifiedCap}
-                  onChange={(e) => setWalletUnverifiedCap(e.target.value.replace(/[^\d]/g, ""))}
-                  className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-ink-500" htmlFor="walletVerified">
-                  Verified cap (UGX)
-                </label>
-                <input
-                  id="walletVerified"
-                  inputMode="numeric"
-                  value={walletVerifiedCap}
-                  onChange={(e) => setWalletVerifiedCap(e.target.value.replace(/[^\d]/g, ""))}
-                  className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
-                />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <label className="text-xs font-semibold text-ink-500" htmlFor="walletMaxTopup">
-                  Max amount per top-up (UGX)
-                </label>
-                <input
-                  id="walletMaxTopup"
-                  inputMode="numeric"
-                  value={walletMaxTopup}
-                  onChange={(e) => setWalletMaxTopup(e.target.value.replace(/[^\d]/g, ""))}
-                  className="w-full rounded-xl border border-[var(--border-faint)] px-3 py-2.5 text-[15px] outline-none focus:border-gold"
-                />
-              </div>
-            </div>
-          </section>
           </>
           )}
 

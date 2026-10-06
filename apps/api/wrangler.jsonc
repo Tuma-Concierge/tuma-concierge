@@ -4,6 +4,7 @@
   "compatibility_date": "2026-09-12",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "observability": { "enabled": true, "redact_query_string": true, "traces": { "enabled": true } },
   "routes": [{ "pattern": "api.tumaffe.online", "custom_domain": true }],
   "d1_databases": [
     {
@@ -21,7 +22,7 @@
   "ai": {
     "binding": "AI"
   },
-  "triggers": { "crons": [] },
+  "triggers": { "crons": ["* * * * *"] },
   "migrations": [
     // The in-app call feature (PR #6) was previously deployed to this
     // Worker directly, ahead of this branch's own history, then dropped

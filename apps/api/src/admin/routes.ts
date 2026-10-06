@@ -28,6 +28,7 @@ export const adminRoutes = new Hono();
 // in the wrong doorway. Every route in this file lives under /admin, so
 // scoping the guard costs nothing and makes reordering harmless.
 adminRoutes.use("/admin/*", requireAuth, requireRole("admin"));
+adminRoutes.use("/admin/orders/:id/refund-to-wallet", async (c) => c.json({error:"wallet_removed",message:"Wallet refunds are no longer available. Use the original payment method for refunds."},410));
 
 type Row = Record<string, unknown>;
 
