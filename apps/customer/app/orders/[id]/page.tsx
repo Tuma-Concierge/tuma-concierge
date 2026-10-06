@@ -175,7 +175,7 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     const res = await api.getOrder(orderId);
     setDetail(res);
-    const pending = res.payments.find((p) => p.status === "pending");
+    const pending = res.payments.find((p) => p.status === "pending" && p.provider_ref);
     if (pending) {
       api.refreshPayment(pending.id).catch(() => {});
     }

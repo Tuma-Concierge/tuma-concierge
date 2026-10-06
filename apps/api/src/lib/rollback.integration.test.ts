@@ -95,6 +95,11 @@ test('restored API preserves modern schema, wallet ownership and sandbox isolati
   await client.execute("INSERT INTO payments(id,order_id,type,provider,amount,status) VALUES('partial-col','partial','collection','yo_mock',10000,'successful'),('partial-paid','partial','disbursement','yo_mock',3000,'successful')");
   assert.equal((await startOrderPayout('partial',send)).amount,7000,'older successful disbursements cannot be paid twice');
   assert.equal((await client.execute("SELECT wallet_balance_sandbox FROM riders WHERE user_id='owner'")).rows[0].wallet_balance_sandbox,7000);
+  await client.execute("INSERT INTO orders(id,list_id,customer_id,rider_id,stage,type,payment_rail,estimated_total,environment) VALUES('charge-once','list','customer','owner','Match','parcel','escrow',6500,'sandbox')");
+  const charge=()=>app.request('/v1/orders/charge-once/fund',{method:'POST',headers,body:JSON.stringify({msisdn:'0772345678'})});
+  const charged=await Promise.all([charge(),charge()]);
+  assert.deepEqual(charged.map(response=>response.status).sort(),[200,409]);
+  assert.equal((await client.execute("SELECT COUNT(*) AS count FROM payments WHERE order_id='charge-once' AND provider_ref IS NOT NULL")).rows[0].count,1,'a double tap starts one charge');
   await client.execute("INSERT INTO lists(id,customer_id,title,status,environment) VALUES('live-list','customer','Live','draft','live')");
   await save(['mobile_money']);
   await client.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('payments_active_providers','[\"flutterwave\"]')");

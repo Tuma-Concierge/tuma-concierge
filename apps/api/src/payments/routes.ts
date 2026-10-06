@@ -38,6 +38,9 @@ async function applyPaymentStatus(payment: Row, actorId: string): Promise<boolea
       sql: "UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
       args: [payment.id as string],
     });
+    if (failed.rowsAffected > 0 && payment.type === "collection") {
+      await db.execute({sql:"UPDATE orders SET stage='Match',updated_at=datetime('now') WHERE id=? AND stage='Fund' AND NOT EXISTS(SELECT 1 FROM payments WHERE order_id=? AND type='collection' AND status IN ('pending','successful'))",args:[String(payment.order_id),String(payment.order_id)]});
+    }
     return failed.rowsAffected > 0;
   }
 

@@ -7,7 +7,7 @@ import { haversineKm } from "../lib/geo.js";
 import { newId, newPin } from "../lib/ids.js";
 import { supportsLegacyOrder } from "../lib/rollback-compat.js";
 import {startOrderPayout} from "../payments/order-payout.js";
-import {requireAutomaticPaymentProviders} from "../payments/service.js";
+import {requireAutomaticPaymentProviders, resolveProvider} from "../payments/service.js";
 import { baseMimeType, extensionForMime } from "../lib/mime.js";
 import { consume, tooManyRequests } from "../lib/ratelimit.js";
 import { getDeliverySettings, getMatchingSettings, getMaxOrderValue, getPlatformEnvironment, getPaymentMethods } from "../lib/settings.js";
@@ -1035,55 +1035,38 @@ orderRoutes.post("/orders/:id/fund", async (c) => {
     return c.json({error:"rider_mobile_money_required",message:"The assigned rider needs a valid mobile-money number before you can pay."},409);
   }
 
+  const network = detectMobileMoneyNetwork(parsed.data.msisdn);
+  if (!network) return c.json({error:"unsupported_network",message:"Use a valid MTN or Airtel mobile-money number."},400);
+  try {await requireAutomaticPaymentProviders(order.environment === "sandbox");}
+  catch(error) {return c.json({error:"mobile_money_unavailable",message:error instanceof Error?error.message:"Mobile money unavailable."},409);}
   const paymentId = newId("pay");
-  let providerRef: string;
-  let network: MobileMoneyNetwork | null;
-  let provider: string;
-  let redirectUrl: string | undefined;
-  try {
-    await requireAutomaticPaymentProviders(order.environment === "sandbox");
-    const initiated = await initiateCollection({
-      referenceId: paymentId,
-      msisdn: parsed.data.msisdn,
-      amount,
-      name: user.name,
-      returnUrl: paymentReturnUrl(id),
-      forceMock: order.environment === "sandbox",
-    });
-    providerRef = initiated.providerRef;
-    network = initiated.network;
-    provider = initiated.provider;
-    redirectUrl = initiated.redirectUrl;
-  } catch (err) {
-    if (err instanceof UnsupportedNetworkError) {
-      return c.json({ error: "unsupported_network", message: err.message }, 400);
-    }
-    console.error("Escrow collection request failed:", err);
-    return c.json(
-      { error: "payment_request_failed", message: "Couldn't reach mobile money just now. Please try again." },
-      502,
-    );
+  const provider = await resolveProvider("collection",{forceMock:order.environment === "sandbox"});
+  // Record the intent before contacting the provider. Only the stage-claim
+  // winner sends a charge, so a double tap cannot debit the customer twice.
+  await db.execute({sql:"INSERT INTO payments(id,order_id,type,provider,msisdn,network,amount,status,raw_payload) VALUES(?,?,'collection',?,?,?,?,'pending',?)",args:[paymentId,id,provider,parsed.data.msisdn,network,amount,JSON.stringify({kind:"order_collection",state:"prepared"})]});
+  const claimed=await db.execute({sql:"UPDATE orders SET stage='Fund',updated_at=datetime('now') WHERE id=? AND stage='Match'",args:[id]});
+  if (!claimed.rowsAffected) {
+    await db.execute({sql:"UPDATE payments SET status='failed',raw_payload=? WHERE id=?",args:[JSON.stringify({kind:"order_collection",state:"not_sent"}),paymentId]});
+    return c.json({error:"payment_in_progress",message:"A payment request is already processing."},409);
   }
-
-  await db.execute({
-    sql: `INSERT INTO payments (id, order_id, type, provider, provider_ref, msisdn, network, amount, currency, status)
-          VALUES (?, ?, 'collection', ?, ?, ?, ?, ?, 'UGX', 'pending')`,
-    args: [paymentId, id, provider, providerRef, parsed.data.msisdn ?? null, network, amount],
-  });
-
-  await touchOrder(id, { stage: "Fund" });
-  await logEvent(
-    id,
-    "Fund",
-    network ? `${mobileMoneyNetworkLabel(network)} collection requested` : "Collection requested",
-    user.sub,
-  );
-
-  return c.json({
-    order: await getOrder(id),
-    payment: { id: paymentId, status: "pending", network },
-    redirectUrl,
-  });
+  await db.execute({sql:"UPDATE payments SET raw_payload=? WHERE id=?",args:[JSON.stringify({kind:"order_collection",state:"submitting"}),paymentId]});
+  let initiated: Awaited<ReturnType<typeof initiateCollection>>;
+  try {
+    initiated=await initiateCollection({referenceId:paymentId,msisdn:parsed.data.msisdn,amount,name:user.name,returnUrl:paymentReturnUrl(id),forceMock:order.environment === "sandbox",providerOverride:provider});
+    if (!initiated.providerRef && initiated.status !== "failed") throw new Error("Missing provider reference");
+  } catch {
+    await db.execute({sql:"UPDATE payments SET raw_payload=? WHERE id=?",args:[JSON.stringify({kind:"order_collection",state:"unknown"}),paymentId]});
+    return c.json({error:"payment_confirmation_required",message:"Your payment request is awaiting provider confirmation. Do not submit it again.",paymentId},502);
+  }
+  const status=initiated.status ?? "pending";
+  await db.execute({sql:"UPDATE payments SET provider_ref=?,status=?,raw_payload=?,updated_at=datetime('now') WHERE id=? AND status='pending'",args:[initiated.providerRef || null,status,JSON.stringify({kind:"order_collection",state:"submitted"}),paymentId]});
+  if (status === "failed") {
+    await touchOrder(id,{stage:"Match"});
+    return c.json({error:"payment_failed",message:"Mobile money declined the payment. You can try again."},409);
+  }
+  if (status === "successful") await touchOrder(id,{stage:"Shop"});
+  await logEvent(id,status === "successful"?"Shop":"Fund",`${mobileMoneyNetworkLabel(network)} collection requested`,user.sub);
+  return c.json({order:await getOrder(id),payment:{id:paymentId,status,network},redirectUrl:initiated.redirectUrl});
 });
 
 // ---------------------------------------------------------------------------
